@@ -21,10 +21,10 @@ browser instantly without losing React component state — critical when debuggi
 session with mock socket events firing on timers.
 
 **Where it's used:**
-- Config: [`vite.config.js`](vite.config.js) — the Vite configuration with React and
-  Tailwind plugins.
-- Scripts: `npm run dev` starts the development server; `npm run build` produces the
-  production bundle.
+- Config: [`frontend/vite.config.js`](frontend/vite.config.js) — the Vite configuration with
+  React and Tailwind plugins.
+- Scripts: `cd frontend && npm run dev` starts the development server; `npm run build` produces
+  the production bundle.
 
 ---
 
@@ -43,13 +43,13 @@ preserves the user's intended destination via `location.state.from`, so after lo
 land where they originally wanted to go.
 
 **Where it's used:**
-- Guard component: [`src/components/ProtectedRoute.jsx`](src/components/ProtectedRoute.jsx)
+- Guard component: [`frontend/src/components/ProtectedRoute.jsx`](frontend/src/components/ProtectedRoute.jsx)
   — checks `useAuth().isAuthenticated` and renders `<Navigate to="/login">` on failure.
-- Route wiring: [`src/App.jsx`](src/App.jsx) — every route except `/login` is wrapped in
-  `<ProtectedRoute>`.
+- Route wiring: [`frontend/src/App.jsx`](frontend/src/App.jsx) — every route except `/login`
+  is wrapped in `<ProtectedRoute>`.
 
 ```jsx
-// src/App.jsx (simplified)
+// frontend/src/App.jsx (simplified)
 <Route
   path="/workspace"
   element={
@@ -76,14 +76,15 @@ The v4 Vite plugin integrates natively with Vite's pipeline — no separate Post
 needed — keeping the tool chain minimal and fast.
 
 **Where it's used:**
-- Vite plugin registration: [`vite.config.js`](vite.config.js) — `tailwindcss()` in the
-  plugins array.
-- CSS entry point: [`src/index.css`](src/index.css) — `@import "tailwindcss";`
-- Example usage: [`src/pages/LoginPage.jsx`](src/pages/LoginPage.jsx) — the sign-in button
-  uses classes like `bg-indigo-600`, `hover:bg-indigo-500`, `rounded-xl`, `shadow-lg`.
+- Vite plugin registration: [`frontend/vite.config.js`](frontend/vite.config.js) —
+  `tailwindcss()` in the plugins array.
+- CSS entry point: [`frontend/src/index.css`](frontend/src/index.css) — `@import "tailwindcss";`
+- Example usage: [`frontend/src/pages/LoginPage.jsx`](frontend/src/pages/LoginPage.jsx) — the
+  sign-in button uses classes like `bg-indigo-600`, `hover:bg-indigo-500`, `rounded-xl`,
+  `shadow-lg`.
 
 ```jsx
-// src/pages/LoginPage.jsx (button snippet)
+// frontend/src/pages/LoginPage.jsx (button snippet)
 <button className="w-full py-3 px-4 rounded-xl font-semibold text-sm
                    bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700
                    text-white transition-colors duration-150
@@ -108,10 +109,11 @@ JWT from `localStorage` via a request interceptor. When the backend goes live, o
 `baseURL` (via `VITE_API_BASE_URL` env var) needs to change — no per-call edits.
 
 **Where it's used:**
-- Instance creation + interceptor: [`src/lib/api.js`](src/lib/api.js), lines 8–22.
+- Instance creation + interceptor: [`frontend/src/lib/api.js`](frontend/src/lib/api.js),
+  lines 8–22.
 
 ```js
-// src/lib/api.js
+// frontend/src/lib/api.js
 const apiClient = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api',
   headers: { 'Content-Type': 'application/json' },
@@ -142,10 +144,11 @@ mock to real is a single-line change (`USE_MOCKS = false`) — or, in the future
 environment variable — without touching any component or context code.
 
 **Where it's used:**
-- Every exported function in [`src/lib/api.js`](src/lib/api.js) follows this pattern.
+- Every exported function in [`frontend/src/lib/api.js`](frontend/src/lib/api.js) follows
+  this pattern.
 
 ```js
-// src/lib/api.js — example: login()
+// frontend/src/lib/api.js — example: login()
 export async function login(email, password) {
   if (USE_MOCKS) {
     return mockDelay({ token: 'mock_jwt_...', user: makeUser() });
@@ -154,10 +157,10 @@ export async function login(email, password) {
 }
 ```
 
-The same approach is used in [`src/lib/socket.js`](src/lib/socket.js) for the WebSocket layer:
-a `MockSocket` class provides `.on()`, `.off()`, `.emit()`, `.connect()`, `.disconnect()`
-that match the real `socket.io-client` API. Swapping to the real client means replacing the
-class instance, not any calling code.
+The same approach is used in [`frontend/src/lib/socket.js`](frontend/src/lib/socket.js) for
+the WebSocket layer: a `MockSocket` class provides `.on()`, `.off()`, `.emit()`, `.connect()`,
+`.disconnect()` that match the real `socket.io-client` API. Swapping to the real client means
+replacing the class instance, not any calling code.
 
 ---
 
@@ -179,15 +182,15 @@ Using Context avoids prop-drilling these through 4+ levels of nesting and keeps 
 flow predictable (one source of truth per domain).
 
 **Where it's used:**
-- Auth: [`src/context/AuthContext.jsx`](src/context/AuthContext.jsx) — exposes `user`,
-  `token`, `login()`, `logout()`, `isAuthenticated`.
-- Session: [`src/context/SessionContext.jsx`](src/context/SessionContext.jsx) — exposes
-  `session`, `driver`, `redirectQueue`, `diffs`, and placeholder setters.
-- Provider wiring: [`src/App.jsx`](src/App.jsx) — `<AuthProvider>` and `<SessionProvider>`
-  wrap all routes.
+- Auth: [`frontend/src/context/AuthContext.jsx`](frontend/src/context/AuthContext.jsx) —
+  exposes `user`, `token`, `login()`, `logout()`, `isAuthenticated`.
+- Session: [`frontend/src/context/SessionContext.jsx`](frontend/src/context/SessionContext.jsx)
+  — exposes `session`, `driver`, `redirectQueue`, `diffs`, and placeholder setters.
+- Provider wiring: [`frontend/src/App.jsx`](frontend/src/App.jsx) — `<AuthProvider>` and
+  `<SessionProvider>` wrap all routes.
 
 ```jsx
-// src/App.jsx
+// frontend/src/App.jsx
 <AuthProvider>
   <SessionProvider>
     <Routes>...</Routes>
@@ -219,8 +222,8 @@ The mock socket layer in `lib/socket.js` simulates these events firing on stagge
 so the frontend can be built and tested with realistic data flow before the backend exists.
 
 **Where it's used:**
-- Mock implementation: [`src/lib/socket.js`](src/lib/socket.js) — `MockSocket` class fires
-  each event with a 3-second stagger after `.connect()` is called.
+- Mock implementation: [`frontend/src/lib/socket.js`](frontend/src/lib/socket.js) —
+  `MockSocket` class fires each event with a 3-second stagger after `.connect()` is called.
 - Future real implementation replaces the mock with:
   ```js
   import { io } from 'socket.io-client';
@@ -244,7 +247,7 @@ look in `features/control/` — they won't accidentally break analytics code. It
 cleanly to the backend's domain model (sessions, diffs, analytics are separate API groups).
 
 **Where it's used:**
-- Directory layout under [`src/features/`](src/features/):
+- Directory layout under [`frontend/src/features/`](frontend/src/features/):
   ```
   features/
     auth/        — login, registration, token management
@@ -271,8 +274,8 @@ different routes. Without persistence, every refresh sends them back to login. T
 logged-in state persists across refreshes.
 
 **Where it's used:**
-- Read on init: [`src/context/AuthContext.jsx`](src/context/AuthContext.jsx) — `useState`
-  initializers read from `localStorage`.
+- Read on init: [`frontend/src/context/AuthContext.jsx`](frontend/src/context/AuthContext.jsx)
+  — `useState` initializers read from `localStorage`.
 - Write on login: same file, `login()` calls `localStorage.setItem(...)`.
 - Clear on logout: same file, `logout()` calls `localStorage.removeItem(...)`.
 
@@ -293,8 +296,8 @@ developers can:
 - Build UIs that feel natural rather than artificially instant.
 
 **Where it's used:**
-- Helper function: [`src/lib/api.js`](src/lib/api.js) — `mockDelay(data)` and
-  `mockError(status, body)`.
+- Helper function: [`frontend/src/lib/api.js`](frontend/src/lib/api.js) — `mockDelay(data)`
+  and `mockError(status, body)`.
 
 ```js
 function mockDelay(data) {
@@ -303,3 +306,45 @@ function mockDelay(data) {
   });
 }
 ```
+
+---
+
+## 11. Monorepo-Style Folder Separation
+
+**What it is:**
+Organizing a single git repository with clearly separated top-level directories for each
+major component of the system — `frontend/`, `backend/`, `docs/`, `tests/`,
+`infrastructure/`, `scripts/`, and `.github/workflows/`. Each directory has its own
+`package.json`, dependencies, and build tooling, even though they share a single repo and
+git history.
+
+**Why AgentRelay uses it:**
+AgentRelay is built by a two-person team where frontend and backend are owned by different
+people. Without folder separation, both developers' tooling collides:
+- Vite's `node_modules/` and the backend's `node_modules/` would merge, creating version
+  conflicts between frontend-only packages (React, Tailwind) and backend-only packages
+  (Express, Prisma, etc.).
+- A single `package.json` would force both sides to coordinate on every dependency change,
+  leading to unnecessary merge conflicts.
+- Build outputs (`dist/` for Vite vs. compiled backend code) would mix at the root.
+
+By giving each side its own directory, dependencies are completely isolated. Running
+`cd frontend && npm install` installs only frontend packages; `cd backend && npm install`
+installs only backend packages. CI/CD workflows can target each directory independently, and
+merge conflicts between frontend and backend work are virtually eliminated.
+
+**Where it's used:**
+- Repo root structure:
+  ```
+  AgentRelay/
+  ├── frontend/          ← Vite + React + Tailwind app (this phase)
+  ├── backend/           ← API server (separate owner, .gitkeep placeholder)
+  ├── docs/              ← Project documentation
+  ├── tests/             ← Integration / e2e tests
+  ├── infrastructure/    ← Deployment configs
+  ├── scripts/           ← CI and utility scripts
+  └── .github/workflows/ ← GitHub Actions pipelines
+  ```
+- Frontend-specific files (`package.json`, `vite.config.js`, `src/`, etc.) all live inside
+  `frontend/`, keeping the repo root clean for project-wide files (`README.md`,
+  `CONTRIBUTING.md`, `LICENSE`, `.gitignore`).
