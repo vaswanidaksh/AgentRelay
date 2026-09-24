@@ -1,0 +1,1 @@
+// Analytics feature — placeholder index
