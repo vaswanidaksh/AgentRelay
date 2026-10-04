@@ -92,7 +92,7 @@ function makeRedirect(sessionId) {
   };
 }
 
-function makeInstruction(sessionId) {
+function makeInstruction(_sessionId) {
   return {
     files: [
       {
@@ -117,7 +117,7 @@ function makeInstruction(sessionId) {
   };
 }
 
-function makeAnalytics(sessionId) {
+function makeAnalytics(_sessionId) {
   return {
     narrative:
       'Session completed successfully. Two agents collaborated across 4 instructions. One redirect was approved, leading to an auth-first approach.',

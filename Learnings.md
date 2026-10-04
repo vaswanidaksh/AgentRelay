@@ -348,3 +348,35 @@ merge conflicts between frontend and backend work are virtually eliminated.
 - Frontend-specific files (`package.json`, `vite.config.js`, `src/`, etc.) all live inside
   `frontend/`, keeping the repo root clean for project-wide files (`README.md`,
   `CONTRIBUTING.md`, `LICENSE`, `.gitignore`).
+
+---
+
+## 12. Aside-Inspired Design System & Motion Aesthetics
+
+**What it is:**
+A modern visual design system based on `aside.com` adapted for AgentRelay, featuring vibrant mesh background gradients (`bg-vibrant-hero`), floating animated Orbs (`animate-orb-1`, `animate-orb-2`), signature agent hover glows (`hover:shadow-purple-500/25`), glassmorphic overlays (`backdrop-blur-xl`), animated gradient text (`text-gradient-cyan-purple`), interactive live streaming logs, and shimmer CTA buttons.
+
+**Why AgentRelay uses it:**
+Developer tools often feel static. By integrating continuous micro-animations, background mesh glows, live streaming indicators, and signature agent color accents, AgentRelay creates a wowed-at-first-glance dynamic experience while keeping developer workflows intuitive and high-contrast.
+
+**Where it's used:**
+- Animations & CSS Mesh: [`frontend/src/index.css`](frontend/src/index.css) — custom keyframe animations (`orbFloat`, `shimmer`, `gradientSpin`, `pulseGlow`).
+- Hero & Motion Landing Page: [`frontend/src/pages/LandingPage.jsx`](frontend/src/pages/LandingPage.jsx) — floating gradient Orbs, simulated real-time socket stream ticker, filter category tabs, and animated agent hover cards.
+- Sticky Navbar: [`frontend/src/components/Navbar.jsx`](frontend/src/components/Navbar.jsx) — glowing brand logo hover effect, backdrop blur, and shimmer CTA.
+- Dark Theme Dashboard Drive: [`frontend/src/pages/DashboardPage.jsx`](frontend/src/pages/DashboardPage.jsx) — dark tech layout with live socket indicators and agent glow borders.
+
+
+---
+
+## 13. Node Express + Socket.io Server & Monorepo Coexistence
+
+**What it is:**
+An Express HTTP REST server integrated with Socket.io real-time WebSocket capabilities, located inside `backend/`. It exposes session retrieval APIs (`/api/sessions`, `/api/sessions/:id`), health checks, and WebSocket rooms (`join_session`).
+
+**Why AgentRelay uses it:**
+While frontend engineers test UI flows with mock data layers (`USE_MOCKS = true`), the Node.js backend running in `backend/` establishes the true real-time engine. Keeping both frontend and backend scripts running concurrently (`npm run dev` in `frontend/` and `npm run dev` in `backend/`) enables instant full-stack validation.
+
+**Where it's used:**
+- Backend entry point: [`backend/src/index.js`](backend/src/index.js) — Express routing, CORS middleware, and Socket.io server listeners.
+- Backend dependencies: [`backend/package.json`](backend/package.json) — isolated dependencies for Express, Socket.io, Dotenv, and Cors.
+

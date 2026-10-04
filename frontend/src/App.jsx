@@ -4,11 +4,12 @@ import { SessionProvider } from './context/SessionContext';
 import ProtectedRoute from './components/ProtectedRoute';
 
 // Pages
+import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
-import WorkspacePage from './pages/WorkspacePage';
-import SessionsPage from './pages/SessionsPage';
-import NewSessionPage from './pages/NewSessionPage';
+import DashboardPage from './pages/DashboardPage';
 import SessionDetailPage from './pages/SessionDetailPage';
+import InstallPage from './pages/InstallPage';
+import NewSessionPage from './pages/NewSessionPage';
 import SessionAnalyticsPage from './pages/SessionAnalyticsPage';
 
 function App() {
@@ -17,15 +18,27 @@ function App() {
       <AuthProvider>
         <SessionProvider>
           <Routes>
-            {/* Public */}
+            {/* Public Routes */}
+            <Route path="/" element={<LandingPage />} />
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/signin" element={<LoginPage />} />
+            <Route path="/install" element={<InstallPage />} />
+            <Route path="/docs" element={<InstallPage />} />
 
-            {/* Protected */}
+            {/* Protected Workspace / Dashboard Routes */}
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute>
+                  <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
             <Route
               path="/workspace"
               element={
                 <ProtectedRoute>
-                  <WorkspacePage />
+                  <DashboardPage />
                 </ProtectedRoute>
               }
             />
@@ -33,7 +46,7 @@ function App() {
               path="/sessions"
               element={
                 <ProtectedRoute>
-                  <SessionsPage />
+                  <DashboardPage />
                 </ProtectedRoute>
               }
             />
@@ -62,8 +75,8 @@ function App() {
               }
             />
 
-            {/* Catch-all: redirect to login */}
-            <Route path="*" element={<Navigate to="/login" replace />} />
+            {/* Catch-all */}
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </SessionProvider>
       </AuthProvider>
