@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function Navbar() {
@@ -7,12 +7,27 @@ export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 32);
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  const handleSectionClick = (e, sectionId) => {
+    e.preventDefault();
+    setMobileOpen(false);
+
+    if (location.pathname === '/') {
+      const el = document.getElementById(sectionId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
+      }
+    } else {
+      navigate('/', { state: { scrollTo: sectionId } });
+    }
+  };
 
   return (
     <header
@@ -38,21 +53,26 @@ export default function Navbar() {
         {/* Desktop nav */}
         <nav className="hidden md:flex items-center gap-7 text-[13px] font-medium text-white/40">
           {[
-            { label: 'Features', href: '#features' },
-            { label: 'Agents', href: '#agents' },
-            { label: 'Security', href: '#security' },
-          ].map(({ label, href }) => (
+            { label: 'Features', id: 'features' },
+            { label: 'Agents', id: 'agents' },
+            { label: 'Security', id: 'security' },
+          ].map(({ label, id }) => (
             <a
               key={label}
-              href={href}
-              className="hover:text-white/85 transition-colors duration-200 tracking-[0.01em]"
+              href={`#${id}`}
+              onClick={(e) => handleSectionClick(e, id)}
+              className="hover:text-white/85 transition-colors duration-200 tracking-[0.01em] cursor-pointer"
             >
               {label}
             </a>
           ))}
           <Link
-            to="/install"
-            className="hover:text-white/85 transition-colors duration-200 tracking-[0.01em]"
+            to="/docs"
+            className={`transition-colors duration-200 tracking-[0.01em] ${
+              location.pathname === '/docs' || location.pathname === '/install'
+                ? 'text-white font-semibold'
+                : 'hover:text-white/85'
+            }`}
           >
             Docs
           </Link>
@@ -70,7 +90,7 @@ export default function Navbar() {
               </Link>
               <button
                 onClick={() => { logout(); navigate('/'); }}
-                className="text-[13px] font-medium text-white/35 hover:text-white/70 transition-colors"
+                className="text-[13px] font-medium text-white/35 hover:text-white/70 transition-colors cursor-pointer"
               >
                 Sign out
               </button>
@@ -99,7 +119,7 @@ export default function Navbar() {
         {/* Mobile hamburger */}
         <button
           onClick={() => setMobileOpen(!mobileOpen)}
-          className="md:hidden p-2 text-white/50 hover:text-white/90 transition-colors"
+          className="md:hidden p-2 text-white/50 hover:text-white/90 transition-colors cursor-pointer"
           aria-label="Menu"
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
@@ -114,16 +134,27 @@ export default function Navbar() {
       {/* Mobile menu */}
       {mobileOpen && (
         <div className="md:hidden glass-dark border-t border-white/[0.06] px-5 py-5 space-y-4">
-          {['#features', '#agents', '#security'].map((href, i) => (
+          {[
+            { label: 'Features', id: 'features' },
+            { label: 'Agents', id: 'agents' },
+            { label: 'Security', id: 'security' },
+          ].map(({ label, id }) => (
             <a
-              key={i}
-              href={href}
-              onClick={() => setMobileOpen(false)}
-              className="block text-sm text-white/55 hover:text-white/90 transition-colors"
+              key={id}
+              href={`#${id}`}
+              onClick={(e) => handleSectionClick(e, id)}
+              className="block text-sm text-white/55 hover:text-white/90 transition-colors cursor-pointer"
             >
-              {['Features', 'Agents', 'Security'][i]}
+              {label}
             </a>
           ))}
+          <Link
+            to="/docs"
+            onClick={() => setMobileOpen(false)}
+            className="block text-sm text-white/55 hover:text-white/90 transition-colors"
+          >
+            Docs
+          </Link>
           <Link
             to="/dashboard"
             onClick={() => setMobileOpen(false)}
