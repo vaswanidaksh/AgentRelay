@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import TiltCard from '../components/TiltCard';
@@ -34,6 +34,20 @@ export default function LandingPage() {
   const [copied, setCopied] = useState(false);
   const [logIdx, setLogIdx] = useState(0);
   const [visibleLogs, setVisibleLogs] = useState([LOGS[0]]);
+  const location = useLocation();
+
+  /* Handle incoming scroll requests from cross-page navigation */
+  useEffect(() => {
+    if (location.state?.scrollTo) {
+      const sectionId = location.state.scrollTo;
+      const el = document.getElementById(sectionId);
+      if (el) {
+        setTimeout(() => {
+          el.scrollIntoView({ behavior: 'smooth' });
+        }, 150);
+      }
+    }
+  }, [location]);
 
   /* rotate live log ticker */
   useEffect(() => {
@@ -70,20 +84,18 @@ export default function LandingPage() {
         <div className="absolute top-40 right-1/4 w-[420px] h-[420px] rounded-full bg-white/[0.018] blur-3xl animate-orb-2 pointer-events-none" />
 
         <div className="relative z-10 max-w-4xl mx-auto">
-          {/* YC badge */}
-          <a
-            href="https://www.ycombinator.com"
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-2 px-3.5 py-1.5 mb-8 rounded-full border border-white/[0.10] bg-white/[0.04] text-xs font-medium text-white/55 hover:text-white/75 hover:border-white/20 transition-all duration-200 group"
+          {/* Announcement Badge */}
+          <Link
+            to="/docs"
+            className="inline-flex items-center gap-2 px-3.5 py-1.5 mb-8 rounded-full border border-white/[0.10] bg-white/[0.04] text-xs font-medium text-white/60 hover:text-white/85 hover:border-white/20 transition-all duration-200 group"
           >
             <span className="relative flex h-1.5 w-1.5">
-              <span className="absolute inline-flex h-full w-full rounded-full bg-white/40 animate-ping opacity-75" />
-              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white/70" />
+              <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 animate-ping opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-400" />
             </span>
-            Backed by Y Combinator
+            AgentRelay v1.0 is Live — Auto-Sync For AI Agents
             <span className="text-white/30 group-hover:translate-x-0.5 transition-transform">›</span>
-          </a>
+          </Link>
 
           {/* Headline */}
           <h1 className="font-semibold tracking-[-0.03em] leading-[1.07] text-5xl sm:text-6xl md:text-7xl text-metallic">
@@ -274,10 +286,20 @@ export default function LandingPage() {
               <TiltCard
                 key={i}
                 maxTilt={8}
-                className="rounded-xl border border-white/[0.07] bg-[#141414] hover:border-white/[0.14] hover:bg-[#1A1A1A] transition-all duration-200 cursor-default"
+                className="border-beam-wrapper rounded-xl border border-white/[0.07] bg-[#141414] hover:border-white/[0.14] hover:bg-[#1A1A1A] transition-all duration-200 cursor-default"
               >
                 <div className="p-4 flex flex-col items-center gap-2 text-center">
-                  <span className="text-2xl text-white/25 font-mono">{ag.icon}</span>
+                  {/* SVG placeholder with silver gradient */}
+                  <svg width="48" height="48" viewBox="0 0 48 48" className="rounded-full" xmlns="http://www.w3.org/2000/svg">
+                    <defs>
+                      <linearGradient id="silverGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                        <stop offset="0%" stop-color="#C8C8C8" />
+                        <stop offset="100%" stop-color="#6B6B6B" />
+                      </linearGradient>
+                    </defs>
+                    <circle cx="24" cy="24" r="22" fill="url(#silverGrad)" stroke="rgba(255,255,255,0.08)" strokeWidth="2" />
+                    <text x="50%" y="55%" dominantBaseline="middle" textAnchor="middle" className="text-sm font-mono" fill="#111111">{ag.icon}</text>
+                  </svg>
                   <span className="text-xs font-semibold text-white/65 leading-tight">{ag.name}</span>
                   <span className="text-[10px] text-white/22 font-mono">{ag.tag}</span>
                 </div>
