@@ -16,6 +16,9 @@ dist-ssr
 
 # Environment files
 *.local
+.env
+.env.*
+!.env.example
 
 # Editor directories and files
 .vscode/*
@@ -27,3 +30,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# SQLite database
+*.db
+*.db-wal
+*.db-shm

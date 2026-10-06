@@ -1,17 +1,26 @@
 {
-  "name": "agentrelay-backend",
+  "name": "backend",
   "version": "1.0.0",
-  "description": "AgentRelay Backend API and Socket.io server",
-  "main": "src/index.js",
+  "description": "",
+  "main": "src/server.js",
   "type": "module",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js"
+    "dev": "nodemon src/server.js",
+    "start": "node src/server.js",
+    "seed": "node src/db/seed.js",
+    "test": "node --test --test-concurrency=1 test/**/*.test.js"
   },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
   "dependencies": {
+    "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
-    "express": "^4.19.2",
-    "socket.io": "^4.7.5"
+    "dotenv": "^18.0.3",
+    "express": "^5.1.0",
+    "uuid": "^14.0.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
   }
 }
