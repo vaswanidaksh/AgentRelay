@@ -380,3 +380,48 @@ While frontend engineers test UI flows with mock data layers (`USE_MOCKS = true`
 - Backend entry point: [`backend/src/index.js`](backend/src/index.js) — Express routing, CORS middleware, and Socket.io server listeners.
 - Backend dependencies: [`backend/package.json`](backend/package.json) — isolated dependencies for Express, Socket.io, Dotenv, and Cors.
 
+---
+
+## 14. AgentRelay CLI Architecture & Local Distillation Pipeline
+
+**What it is:**
+The AgentRelay CLI (`agentrelay`) is a local-first command-line application built with Node.js and Commander.js. It runs on the developer's laptop to capture AI coding session events from opt-in project folders, scrub secrets deterministically, distill long sessions into structured context records using a local LLM or edge model, and manage consent-gated promotion to a team server.
+
+**Why AgentRelay uses it:**
+1. **Local-First & Offline Privacy (PRD §5):** Session capture, deterministic secret scrubbing, distillation, SQLite FTS5 search, and review all execute 100% offline without sending raw code or transcripts to external servers.
+2. **Opt-In Scoped Capture (PRD §8.1):** Capture is strictly opt-in via `agentrelay scope add <path>`. Files outside scoped directories are never opened.
+3. **Deterministic Secret Scrubbing (PRD FR-007, FR-008):** High-entropy string and pattern regex scrubbing (`private_key`, `aws_key`, `github_token`, `ai_api_key`, `db_connection`, `bearer_token`, `env_secret`, `email`) replaces secrets with typed placeholders `[REDACTED:<type>]` before any event is saved locally or promoted.
+4. **Context Record Specification (`agentrelay.record/0.1`):** Sessions are distilled into versioned context records containing title, summary, decision statements with evidence event citations (`["e_1", "e_2"]`), files touched, tags, and sensitivity metadata.
+5. **Consent-Gated Promotion & Incremental Pull (PRD §10.2):** Records remain `PERSONAL` (private) by default. Only reviewed records explicitly marked `shareable` via `agentrelay share <recordId>` can be uploaded to a team server via `agentrelay promote <recordId>`, where the server re-scrubs them for defense-in-depth before team members pull them with `agentrelay pull`.
+
+**Where it's used:**
+- CLI Package Entry & Commands: [`cli/bin/agentrelay.js`](cli/bin/agentrelay.js), [`cli/src/index.js`](cli/src/index.js) — registering `init`, `scope`, `status`, `pause`, `resume`, `review`, `search`, `show`, `share`, `unshare`, `login`, `logout`, `team`, `promote`, `pull`, `retry`, `purge`, `export`, and `daemon`.
+- Local Database & FTS5: [`cli/src/db.js`](cli/src/db.js) — SQLite store (`~/.agentrelay/db.sqlite`) for sessions, scrubbed events, offsets, jobs, records, and FTS5 full-text search.
+- Config & Auth Manager: [`cli/src/config.js`](cli/src/config.js) — `~/.agentrelay/config.json` and secure 0600 `auth.json`.
+- Deterministic Scrubber & Schema: [`cli/src/core/scrubber.js`](cli/src/core/scrubber.js), [`cli/src/core/schema.js`](cli/src/core/schema.js) — shared secret redaction engine and schema validator.
+- Transcript Watcher & Adapter: [`cli/src/watcher/watcher.js`](cli/src/watcher/watcher.js), [`cli/src/watcher/adapter.js`](cli/src/watcher/adapter.js) — incremental session log watcher and transcript normalizer.
+- Distiller Processor: [`cli/src/distiller/distiller.js`](cli/src/distiller/distiller.js) — job processor that calls local LLM (Ollama) or edge rule extraction to produce evidence-linked context records.
+- CLI Unit Tests: [`cli/test/cli.test.js`](cli/test/cli.test.js) — unit and integration tests for scrubbing, event normalization, record validation, and config.
+- CLI E2E Smoke Tests: [`cli/test/e2e-smoke.js`](cli/test/e2e-smoke.js) — comprehensive 15-stage end-to-end integration test exercising init, scope management, watcher capture, distillation, search, review, share, export, pause/resume, incremental capture, and purge.
+
+---
+
+## 15. Multi-Agent Watcher, Adapter Normalization & E2E Testing Verification
+
+**What it is:**
+The CLI Watcher ([`cli/src/watcher/watcher.js`](cli/src/watcher/watcher.js)) and Adapter ([`cli/src/watcher/adapter.js`](cli/src/watcher/adapter.js)) form the capture engine of AgentRelay. They automatically discover transcript logs from popular AI coding agents (Claude Code, Cursor, Windsurf, Aider, Copilot), stream raw lines incrementally using byte offsets, detect the agent type, normalize multi-modal/nested content block objects, scrub sensitive secrets deterministically, and queue distillation jobs in SQLite.
+
+**Key Technical Lessons & Solutions:**
+1. **GitHub Token Regex Bounds:** GitHub personal access tokens (`ghp_`, `gho_`, `ghu_`, `ghs_`, `github_pat_`) vary in string length across test environments and real token formats. Restricting `{36}` exact match led to missed redacting on 35-character test keys; updating bounds to `{20,255}` ensured full scrubbing coverage without false negatives.
+2. **Incremental Session Capture Job Upsert:** Re-capturing appended log lines into an existing session previously caused a `UNIQUE constraint failed: jobs.id` crash when `job_<sessionId>` row already existed. Implementing `INSERT INTO jobs ... ON CONFLICT(id) DO UPDATE SET state = 'QUEUED'` ensured seamless non-blocking incremental job re-queuing.
+3. **Multi-Agent Transcript Normalization (`detectAgentType`):** Automatic agent detection extracts agent identity (`claude-code`, `cursor`, `windsurf`, `aider`, `copilot`, `agentrelay-generic`) based on file system paths (`.claude`, `.cursor`, `aider.chat.history.md`, `.windsurf`) and normalizes structured content block arrays `[{ type: 'text' }, { type: 'tool_use' }]` into clean event text.
+4. **End-to-End Verification Pipeline:** Automated test suite [`cli/test/e2e-smoke.js`](cli/test/e2e-smoke.js) validates all 15 stages of local CLI operation (init → scope → status → watcher capture → local distillation → search → show → review → share → export → unshare → pause/resume → incremental capture → purge).
+
+**Where it's used:**
+- Watcher: [`cli/src/watcher/watcher.js`](cli/src/watcher/watcher.js)
+- Adapter: [`cli/src/watcher/adapter.js`](cli/src/watcher/adapter.js)
+- Unit Tests: [`cli/test/cli.test.js`](cli/test/cli.test.js)
+- E2E Test Runner: [`cli/test/e2e-smoke.js`](cli/test/e2e-smoke.js)
+
+
+
