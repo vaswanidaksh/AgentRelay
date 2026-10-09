@@ -423,5 +423,25 @@ The CLI Watcher ([`cli/src/watcher/watcher.js`](cli/src/watcher/watcher.js)) and
 - Unit Tests: [`cli/test/cli.test.js`](cli/test/cli.test.js)
 - E2E Test Runner: [`cli/test/e2e-smoke.js`](cli/test/e2e-smoke.js)
 
+---
+
+## 16. Local Store & Distiller Pipeline Architecture
+
+**What it is:**
+The Local Store ([`cli/src/db.js`](cli/src/db.js)) and Local Distiller ([`cli/src/distiller/distiller.js`](cli/src/distiller/distiller.js)) manage local persistence, full-text index querying (FTS5), and AI distillation of scrubbed agent session logs into versioned Context Records (`agentrelay.record/0.1`).
+
+**Key Technical Lessons & Solutions:**
+1. **SQLite WAL Mode & Performance Indexing:** Enabling Write-Ahead Logging (`journal_mode = WAL`) and adding compound indices (`idx_events_session`, `idx_jobs_state_run`, `idx_records_shareable`, `idx_records_project`) guarantees zero database locking under heavy concurrent watcher writes and CLI read queries.
+2. **Hybrid Local LLM & Heuristic Rule Distillation:** The distiller attempts calling local LLM runtimes (such as Ollama at `http://localhost:11434`) with a strict JSON format prompt. If the local model endpoint times out or is offline, it seamlessly falls back to edge rule-based extraction (`extractRuleBasedDistillation`), guaranteeing 100% distillation availability offline without external API dependencies.
+3. **Evidence Event Citation & Schema Validation:** Every distilled record links decisions to exact scrubbed event IDs (`evidence: ["e_1", "e_2"]`), calculates aggregate secret redaction counts, generates native UUIDs (`crypto.randomUUID()`), and passes strict schema compliance (`validateContextRecord`).
+4. **FTS5 Full-Text Search Integration:** Full-text search virtual tables (`records_fts`) index title, summary, decision text, and tags. Search queries (`searchLocalRecords`) attempt FTS5 match operators first and fall back gracefully to standard `LIKE` pattern matching if FTS5 is unavailable in custom SQLite builds.
+
+**Where it's used:**
+- Local Store & FTS5 Indexing: [`cli/src/db.js`](cli/src/db.js)
+- Local Distiller Processor: [`cli/src/distiller/distiller.js`](cli/src/distiller/distiller.js)
+- Unit Tests: [`cli/test/cli.test.js`](cli/test/cli.test.js)
+- E2E Smoke Tests: [`cli/test/e2e-smoke.js`](cli/test/e2e-smoke.js)
+
+
 
 

@@ -1,5 +1,5 @@
-import { v4 as uuidv4 } from 'uuid';
-import { getDb } from '../db.js';
+import crypto from 'crypto';
+import { getDb, saveRecord } from '../db.js';
 import { loadConfig } from '../config.js';
 import { validateContextRecord, CURRENT_SCHEMA_VERSION } from '../core/schema.js';
 import { SCRUBBER_VERSION } from '../core/scrubber.js';
@@ -39,47 +39,8 @@ export async function processDistillJobs() {
       // Validate record
       validateContextRecord(record);
 
-      // Save record to DB
-      const insertRecordStmt = db.prepare(`
-        INSERT INTO records (
-          record_id, version, schema_version, json, origin, author_id, project_tag,
-          shareable, feedback_status, sensitivity, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(record_id, version) DO UPDATE SET
-          json = excluded.json,
-          feedback_status = excluded.feedback_status
-      `);
-
-      insertRecordStmt.run(
-        record.recordId,
-        record.version,
-        record.schemaVersion,
-        JSON.stringify(record),
-        record.origin,
-        record.author.userId,
-        record.acl.projectTag,
-        record.visibility.shareable ? 1 : 0,
-        record.feedback.status,
-        record.sensitivity.label,
-        record.times.createdAt
-      );
-
-      // Index in FTS5 table if available
-      try {
-        db.prepare(`
-          INSERT INTO records_fts (record_id, title, summary, decisions, tags, project_tag)
-          VALUES (?, ?, ?, ?, ?, ?)
-        `).run(
-          record.recordId,
-          record.content.title,
-          record.content.summary,
-          JSON.stringify(record.content.decisions),
-          (record.content.tags || []).join(' '),
-          record.acl.projectTag
-        );
-      } catch {
-        // FTS fallback
-      }
+      // Save record to DB store
+      saveRecord(record);
 
       // Mark job completed and session READY_FOR_REVIEW
       db.prepare("UPDATE jobs SET state = 'COMPLETED' WHERE id = ?").run(job.id);
@@ -127,7 +88,7 @@ async function distillSessionEvents(session, events, config) {
   }
 
   const now = new Date().toISOString();
-  const recordId = uuidv4();
+  const recordId = crypto.randomUUID();
 
   // Aggregate redaction counts
   const redactionCounts = {};
