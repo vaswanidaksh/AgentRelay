@@ -91,6 +91,14 @@ export function getDb() {
     );
   `);
 
+  // Add performance indexes
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id);
+    CREATE INDEX IF NOT EXISTS idx_jobs_state_run ON jobs(state, run_after);
+    CREATE INDEX IF NOT EXISTS idx_records_shareable ON records(shareable);
+    CREATE INDEX IF NOT EXISTS idx_records_project ON records(project_tag);
+  `);
+
   // Try initializing FTS5 table for full-text search
   try {
     db.exec(`
@@ -116,5 +124,87 @@ export function closeDb() {
   if (dbInstance) {
     dbInstance.close();
     dbInstance = null;
+  }
+}
+
+/**
+ * Saves a context record object into SQLite and updates the FTS index.
+ */
+export function saveRecord(record) {
+  const db = getDb();
+  const stmt = db.prepare(`
+    INSERT INTO records (
+      record_id, version, schema_version, json, origin, author_id, project_tag,
+      shareable, feedback_status, sensitivity, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(record_id, version) DO UPDATE SET
+      json = excluded.json,
+      shareable = excluded.shareable,
+      feedback_status = excluded.feedback_status,
+      sensitivity = excluded.sensitivity
+  `);
+
+  stmt.run(
+    record.recordId,
+    record.version,
+    record.schemaVersion,
+    JSON.stringify(record),
+    record.origin || 'local',
+    record.author?.userId || 'local_user',
+    record.acl?.projectTag || record.source?.projectTag || 'default',
+    record.visibility?.shareable ? 1 : 0,
+    record.feedback?.status || 'unreviewed',
+    record.sensitivity?.label || 'none',
+    record.times?.createdAt || new Date().toISOString()
+  );
+
+  try {
+    db.prepare(`
+      INSERT INTO records_fts (record_id, title, summary, decisions, tags, project_tag)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      record.recordId,
+      record.content?.title || '',
+      record.content?.summary || '',
+      JSON.stringify(record.content?.decisions || []),
+      (record.content?.tags || []).join(' '),
+      record.acl?.projectTag || record.source?.projectTag || ''
+    );
+  } catch {
+    // ignore FTS fallback
+  }
+}
+
+/**
+ * Retrieves a record by ID.
+ */
+export function getRecordById(recordId) {
+  const db = getDb();
+  const row = db.prepare('SELECT json FROM records WHERE record_id = ? ORDER BY version DESC LIMIT 1').get(recordId);
+  if (!row) return null;
+  return JSON.parse(row.json);
+}
+
+/**
+ * Searches records in the local store using FTS5 or LIKE fallback.
+ */
+export function searchLocalRecords(query, limit = 20) {
+  const db = getDb();
+  try {
+    const rows = db.prepare(`
+      SELECT r.json FROM records r
+      JOIN records_fts f ON r.record_id = f.record_id
+      WHERE records_fts MATCH ?
+      ORDER BY r.created_at DESC LIMIT ?
+    `).all(query, limit);
+    return rows.map(row => JSON.parse(row.json));
+  } catch {
+    const likeQuery = `%${query}%`;
+    const rows = db.prepare(`
+      SELECT json FROM records
+      WHERE json LIKE ?
+      ORDER BY created_at DESC LIMIT ?
+    `).all(likeQuery, limit);
+    return rows.map(row => JSON.parse(row.json));
   }
 }
