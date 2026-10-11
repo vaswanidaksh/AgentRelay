@@ -10,6 +10,8 @@ import { loginCommand, logoutCommand } from './commands/login.js';
 import { teamCommand } from './commands/team.js';
 import { promoteCommand } from './commands/promote.js';
 import { pullCommand } from './commands/pull.js';
+import { handoffCommand } from './commands/handoff.js';
+import { inboxCommand } from './commands/inbox.js';
 import { retryCommand } from './commands/retry.js';
 import { purgeCommand } from './commands/purge.js';
 import { exportCommand } from './commands/export.js';
@@ -103,6 +105,20 @@ export function createProgram() {
     .command('pull')
     .description('Fetch team records into local store')
     .action((options) => pullCommand(options));
+
+  program
+    .command('handoff <recordId> <handle>')
+    .description('Assign a context record to a teammate with notification')
+    .option('--team <teamId>', 'Target team ID')
+    .action((recordId, handle, options) => handoffCommand(recordId, handle, options));
+
+  program
+    .command('inbox')
+    .description('View and manage received context handoffs')
+    .option('--state <state>', 'Filter by state (pending | read | archived)')
+    .option('--read <id>', 'Mark an inbox item as read')
+    .option('--json', 'Output inbox items in JSON format')
+    .action((options) => inboxCommand(options));
 
   program
     .command('retry [sessionId]')

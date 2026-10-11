@@ -16,6 +16,12 @@ export function findUserById(id) {
   return db.prepare('SELECT * FROM users WHERE id = ?').get(id);
 }
 
+export function findUserByHandle(handle) {
+  const db = getDb();
+  const normalized = handle.startsWith('@') ? handle : `@${handle}`;
+  return db.prepare('SELECT * FROM users WHERE handle = ?').get(normalized);
+}
+
 export function createUser({ id, githubId, handle }) {
   const db = getDb();
   db.prepare(`

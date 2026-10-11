@@ -72,6 +72,11 @@ export function createInvite({ id, teamId, rawToken, expiresAt, maxUses = 1 }) {
   db.prepare(`
     INSERT INTO invites (id, team_id, token_hash, expires_at, max_uses, uses)
     VALUES (?, ?, ?, ?, ?, 0)
+    ON CONFLICT (id) DO UPDATE SET
+      token_hash = excluded.token_hash,
+      expires_at = excluded.expires_at,
+      max_uses = excluded.max_uses,
+      uses = 0
   `).run(id, teamId, tokenHash, expiresAt, maxUses);
   return { id, teamId, rawToken, expiresAt, maxUses };
 }
