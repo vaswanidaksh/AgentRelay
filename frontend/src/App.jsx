@@ -6,6 +6,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 // Pages
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
+import AuthCallbackPage from './pages/AuthCallbackPage';
 import DashboardPage from './pages/DashboardPage';
 import SessionDetailPage from './pages/SessionDetailPage';
 import InstallPage from './pages/InstallPage';
@@ -24,6 +25,8 @@ function App() {
             <Route path="/signin" element={<LoginPage />} />
             <Route path="/install" element={<InstallPage />} />
             <Route path="/docs" element={<InstallPage />} />
+            {/* GitHub OAuth callback — must be public (not wrapped in ProtectedRoute) */}
+            <Route path="/auth/callback" element={<AuthCallbackPage />} />
 
             {/* Protected Workspace / Dashboard Routes */}
             <Route
