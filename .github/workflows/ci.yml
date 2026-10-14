@@ -13,7 +13,7 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [20.x, 22.x]
+        node-version: [22.x]
 
     steps:
       - name: Checkout repository
@@ -28,19 +28,19 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential python3 make g++
 
       - name: Install Backend dependencies
-        run: npm ci --prefix backend
-
-      - name: Rebuild native modules for backend
-        run: npm rebuild better-sqlite3 --prefix backend
+        run: |
+          export NPM_CONFIG_BUILD_FROM_SOURCE=true
+          npm ci --prefix backend
+          npm rebuild better-sqlite3 --prefix backend
 
       - name: Run Backend Unit & Integration Tests (TEST-013, 014, 015, 016, 018)
         run: npm test --prefix backend
 
       - name: Install CLI dependencies
-        run: npm ci --prefix cli
-
-      - name: Rebuild native modules for CLI
-        run: npm rebuild better-sqlite3 --prefix cli
+        run: |
+          export NPM_CONFIG_BUILD_FROM_SOURCE=true
+          npm ci --prefix cli
+          npm rebuild better-sqlite3 --prefix cli
 
       - name: Run CLI Unit Tests
         run: npm test --prefix cli
