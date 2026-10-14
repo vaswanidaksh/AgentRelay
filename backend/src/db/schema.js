@@ -84,6 +84,8 @@ export function initializeSchema(database) {
       record_id  TEXT,
       metadata   TEXT,
       ts         TEXT NOT NULL DEFAULT (datetime('now')),
+      prev_hash  TEXT,
+      hash       TEXT,
       FOREIGN KEY (actor_id) REFERENCES users(id),
       FOREIGN KEY (team_id) REFERENCES teams(id)
     );
@@ -105,5 +107,20 @@ export function initializeSchema(database) {
     );
   `);
 
+  runMigrations(db);
+
   console.log('[DB] LCP schema initialized — all 8 server tables ready');
+}
+
+/**
+ * Idempotent, additive migrations for databases created by earlier versions.
+ */
+function runMigrations(db) {
+  const auditCols = db.prepare('PRAGMA table_info(audit_events)').all().map(c => c.name);
+  if (!auditCols.includes('prev_hash')) {
+    db.exec('ALTER TABLE audit_events ADD COLUMN prev_hash TEXT');
+  }
+  if (!auditCols.includes('hash')) {
+    db.exec('ALTER TABLE audit_events ADD COLUMN hash TEXT');
+  }
 }

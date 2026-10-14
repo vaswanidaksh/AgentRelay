@@ -4,6 +4,7 @@ import { initializeSchema, closeDb } from './db/index.js';
 import { config } from './config.js';
 import routes from './routes/index.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { createRateLimiter } from './middleware/rateLimit.js';
 
 // Initialize SQLite schema on startup
 initializeSchema();
@@ -11,12 +12,27 @@ initializeSchema();
 export const app = express();
 
 app.use(cors({
-  origin: config.clientOrigin,
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  origin: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   credentials: true
 }));
 
-app.use(express.json({ limit: '5mb' }));
+// Oversized bodies are rejected with 413 before any route logic runs (Threat T-06)
+app.use(express.json({ limit: config.maxBodyBytes }));
+
+// Rate limiting (PRD §15.3). Auth token minting gets a stricter budget.
+export const authLimiter = createRateLimiter({
+  name: 'auth',
+  windowMs: config.rateLimitWindowMs,
+  max: config.authRateLimitMax
+});
+export const apiLimiter = createRateLimiter({
+  name: 'api',
+  windowMs: config.rateLimitWindowMs,
+  max: config.rateLimitMax
+});
+app.use('/api/v1/auth', authLimiter);
+app.use('/api/v1', apiLimiter);
 
 // Mount all routes
 app.use(routes);

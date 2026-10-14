@@ -59,6 +59,15 @@ export function listMembers(teamId) {
   `).all(teamId);
 }
 
+export function addMember({ teamId, userId, role = 'member' }) {
+  const db = getDb();
+  return db.prepare(`
+    INSERT INTO memberships (team_id, user_id, role)
+    VALUES (?, ?, ?)
+    ON CONFLICT (team_id, user_id) DO UPDATE SET role = excluded.role
+  `).run(teamId, userId, role);
+}
+
 export function removeMember(teamId, userId) {
   const db = getDb();
   return db.prepare(`

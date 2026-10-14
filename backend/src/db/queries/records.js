@@ -64,6 +64,7 @@ export function pullRecords({ teamId, since = 0, limit = 50 }) {
     sensitivity: r.sensitivity,
     promotedAt: r.promoted_at,
     withdrawnAt: r.withdrawn_at,
+    withdrawn: Boolean(r.withdrawn_at),
     isWithdrawn: Boolean(r.withdrawn_at),
     record: JSON.parse(r.json)
   }));
@@ -93,14 +94,33 @@ export function getRecord(teamId, recordId) {
 
 /**
  * Marks a record as withdrawn (tombstone) in a team.
+ * Advances seq so incremental pull cursors pick up the tombstone.
  */
 export function withdrawRecord(teamId, recordId) {
   const db = getDb();
-  const info = db.prepare(`
-    UPDATE records
-    SET withdrawn_at = datetime('now')
+  const rows = db.prepare(`
+    SELECT seq FROM records
     WHERE team_id = ? AND record_id = ? AND withdrawn_at IS NULL
-  `).run(teamId, recordId);
+  `).all(teamId, recordId);
 
-  return info.changes > 0;
+  if (rows.length === 0) return false;
+
+  const maxSeqRow = db.prepare('SELECT COALESCE(MAX(seq), 0) AS maxSeq FROM records').get();
+  let nextSeq = (maxSeqRow?.maxSeq || 0) + 1;
+
+  const updateStmt = db.prepare(`
+    UPDATE records
+    SET withdrawn_at = datetime('now'),
+        seq = ?
+    WHERE seq = ?
+  `);
+
+  const tx = db.transaction(() => {
+    for (const r of rows) {
+      updateStmt.run(nextSeq++, r.seq);
+    }
+  });
+  tx();
+
+  return true;
 }

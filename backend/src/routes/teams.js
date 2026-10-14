@@ -53,7 +53,17 @@ router.post('/teams', requireAuth, (req, res, next) => {
  */
 router.get('/teams', requireAuth, (req, res, next) => {
   try {
-    const teams = listTeamsForUser(req.user.id);
+    let teams = listTeamsForUser(req.user.id);
+    if (teams.length === 0) {
+      const defaultTeamId = `t_${uuidv4().replace(/-/g, '').slice(0, 10)}`;
+      const handleName = req.user.handle ? req.user.handle.replace(/^@/, '') : 'Default';
+      createTeam({
+        id: defaultTeamId,
+        name: `${handleName}'s Workspace`,
+        createdBy: req.user.id
+      });
+      teams = listTeamsForUser(req.user.id);
+    }
     res.json({ teams });
   } catch (err) {
     next(err);
@@ -90,6 +100,7 @@ router.post('/teams/:id/invites', requireAuth, requireTeamMember, requireTeamAdm
       invite: {
         id: invite.id,
         teamId: invite.teamId,
+        token: rawToken,
         inviteToken: rawToken,
         expiresAt: invite.expiresAt,
         maxUses: invite.maxUses
