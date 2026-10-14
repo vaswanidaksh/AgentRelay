@@ -1,0 +1,52 @@
+name: AgentRelay CI Pipeline
+
+on:
+  push:
+    branches: [main, master, handoff-inbox-implementation, ci-cd-pipeline]
+  pull_request:
+    branches: [main, master, handoff-inbox-implementation]
+
+jobs:
+  test-and-verify:
+    name: Test & Verify Suite
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [22.x]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+
+      - name: Ensure build tools are installed
+        run: sudo apt-get update && sudo apt-get install -y build-essential python3 make g++
+
+      - name: Install Backend dependencies
+        run: |
+          export NPM_CONFIG_BUILD_FROM_SOURCE=true
+          npm ci --prefix backend
+          npm rebuild better-sqlite3 --prefix backend
+
+      - name: Run Backend Unit & Integration Tests (TEST-013, 014, 015, 016, 018)
+        run: npm test --prefix backend
+
+      - name: Install CLI dependencies
+        run: |
+          export NPM_CONFIG_BUILD_FROM_SOURCE=true
+          npm ci --prefix cli
+          npm rebuild better-sqlite3 --prefix cli
+
+      - name: Run CLI Unit Tests
+        run: npm test --prefix cli
+
+      - name: Run CLI E2E Smoke Tests
+        run: node cli/test/e2e-smoke.js
+
+      - name: Run Scrubber Recall Evaluation (Metric M-1, TEST-005)
+        run: node eval/benchmark_scrubber.js
