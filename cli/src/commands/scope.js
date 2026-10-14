@@ -28,8 +28,9 @@ export function scopeCommand(action, targetPath) {
       console.error(`Error: Path does not exist: ${resolved}`);
       process.exit(1);
     }
+    const stat = fs.statSync(resolved);
     if (config.scopes.includes(resolved)) {
-      console.log(`Folder is already in scope: ${resolved}`);
+      console.log(`Path is already in scope: ${resolved}`);
       return;
     }
     config.scopes.push(resolved);

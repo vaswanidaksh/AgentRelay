@@ -60,14 +60,17 @@ export async function pullCommand(options) {
         maxSeq = item.seq;
       }
 
-      if (item.withdrawn) {
-        // Handle withdrawn tombstone
+      if (item.withdrawn || item.isWithdrawn || item.withdrawnAt) {
+        // Handle withdrawn tombstone (PRD FR-022)
         db.prepare('DELETE FROM records WHERE record_id = ?').run(item.recordId);
+        try {
+          db.prepare('DELETE FROM records_fts WHERE record_id = ?').run(item.recordId);
+        } catch {}
         continue;
       }
 
       try {
-        const record = item.json ? JSON.parse(item.json) : item;
+        const record = item.record || (item.json ? JSON.parse(item.json) : item);
         validateContextRecord(record);
 
         record.origin = 'team';

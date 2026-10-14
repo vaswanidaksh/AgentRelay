@@ -9,6 +9,7 @@ import { shareCommand, unshareCommand } from './commands/share.js';
 import { loginCommand, logoutCommand } from './commands/login.js';
 import { teamCommand } from './commands/team.js';
 import { promoteCommand } from './commands/promote.js';
+import { unpromoteCommand } from './commands/unpromote.js';
 import { pullCommand } from './commands/pull.js';
 import { handoffCommand } from './commands/handoff.js';
 import { inboxCommand } from './commands/inbox.js';
@@ -100,6 +101,12 @@ export function createProgram() {
     .description('Upload a shareable record to the team server')
     .option('--team <teamId>', 'Target team ID')
     .action((recordId, options) => promoteCommand(recordId, options));
+
+  program
+    .command('unpromote <recordId>')
+    .description('Withdraw a promoted record from the team server')
+    .option('--team <teamId>', 'Target team ID')
+    .action((recordId, options) => unpromoteCommand(recordId, options));
 
   program
     .command('pull')

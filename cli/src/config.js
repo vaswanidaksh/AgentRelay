@@ -28,7 +28,7 @@ export function getDefaultConfig() {
     paused: false,
     modelRuntimeUrl: process.env.MODEL_RUNTIME_URL || 'http://localhost:11434',
     modelName: process.env.MODEL_NAME || 'qwen2.5-coder:7b',
-    serverUrl: process.env.SERVER_URL || 'http://localhost:3001',
+    serverUrl: process.env.SERVER_URL || 'http://localhost:4000',
     retentionDays: 14,
     updatedAt: new Date().toISOString(),
   };
