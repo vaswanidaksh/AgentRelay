@@ -2,9 +2,9 @@ name: AgentRelay CI Pipeline
 
 on:
   push:
-    branches: [main, master, handoff-inbox-implementation]
+    branches: [main, master, handoff-inbox-implementation, ci-cd-pipeline]
   pull_request:
-    branches: [main, master]
+    branches: [main, master, handoff-inbox-implementation]
 
 jobs:
   test-and-verify:
@@ -23,19 +23,24 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
-          cache-dependency-path: |
-            backend/package.json
-            cli/package.json
+
+      - name: Ensure build tools are installed
+        run: sudo apt-get update && sudo apt-get install -y build-essential python3 make g++
 
       - name: Install Backend dependencies
         run: npm ci --prefix backend
+
+      - name: Rebuild native modules for backend
+        run: npm rebuild better-sqlite3 --prefix backend
 
       - name: Run Backend Unit & Integration Tests (TEST-013, 014, 015, 016, 018)
         run: npm test --prefix backend
 
       - name: Install CLI dependencies
         run: npm ci --prefix cli
+
+      - name: Rebuild native modules for CLI
+        run: npm rebuild better-sqlite3 --prefix cli
 
       - name: Run CLI Unit Tests
         run: npm test --prefix cli
