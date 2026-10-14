@@ -118,6 +118,10 @@ export function scanAndCaptureSessionFiles() {
 function findTranscriptFiles(dirPath) {
   const results = [];
   try {
+    const stat = fs.statSync(dirPath);
+    if (stat.isFile()) {
+      return [dirPath];
+    }
     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path.join(dirPath, entry.name);
