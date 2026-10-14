@@ -46,3 +46,15 @@ export class SemanticError extends AppError {
     super('SEMANTIC_ERROR', message, 422, details);
   }
 }
+
+export class PayloadTooLargeError extends AppError {
+  constructor(message = 'Request payload exceeds the maximum allowed size.', details = null) {
+    super('PAYLOAD_TOO_LARGE', message, 413, details);
+  }
+}
+
+export class RateLimitError extends AppError {
+  constructor(message = 'Too many requests. Please retry later.', details = null) {
+    super('RATE_LIMITED', message, 429, details);
+  }
+}

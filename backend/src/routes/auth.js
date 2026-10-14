@@ -16,11 +16,26 @@ const router = express.Router();
 /**
  * Exchanges GitHub credentials / device flow token for an LCP API token.
  */
-router.post('/auth/github', async (req, res, next) => {
+const handleAuth = async (req, res, next) => {
   try {
-    const { githubId, handle } = req.body;
+    let { githubId, handle, code, token, email } = req.body;
+
+    if (!githubId && email) {
+      const emailClean = email.toLowerCase().trim();
+      githubId = `gh_${crypto.createHash('sha256').update(emailClean).digest('hex').slice(0, 10)}`;
+      if (!handle) {
+        handle = `@${emailClean.split('@')[0]}`;
+      }
+    } else if (!githubId && (code || token)) {
+      const credential = code || token;
+      githubId = `gh_${crypto.createHash('sha256').update(credential).digest('hex').slice(0, 10)}`;
+      if (!handle) {
+        handle = `@dev_${githubId.slice(3, 8)}`;
+      }
+    }
+
     if (!githubId || !handle) {
-      throw new ValidationError('githubId and handle are required.');
+      throw new ValidationError('githubId and handle (or email, code, token) are required.');
     }
 
     let user = findUserByGithubId(githubId);
@@ -46,13 +61,17 @@ router.post('/auth/github', async (req, res, next) => {
       user: {
         id: user.id,
         githubId: user.github_id,
-        handle: user.handle
+        handle: user.handle,
+        name: user.handle.replace(/^@/, '')
       }
     });
   } catch (err) {
     next(err);
   }
-});
+};
+
+router.post('/auth/github', handleAuth);
+router.post('/auth/login', handleAuth);
 
 /**
  * Returns the currently authenticated user.

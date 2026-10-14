@@ -17,7 +17,7 @@ export const PATTERNS = [
   },
   {
     type: 'github_token',
-    regex: /\b(ghp_[a-zA-Z0-9]{36}|github_pat_[a-zA-Z0-9_]{40,}|gho_[a-zA-Z0-9]{36}|ghu_[a-zA-Z0-9]{36}|ghs_[a-zA-Z0-9]{36})\b/g,
+    regex: /\b(ghp_[a-zA-Z0-9]{20,255}|github_pat_[a-zA-Z0-9_]{30,}|gho_[a-zA-Z0-9]{20,255}|ghu_[a-zA-Z0-9]{20,255}|ghs_[a-zA-Z0-9]{20,255})\b/g,
   },
   {
     type: 'ai_api_key',

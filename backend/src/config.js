@@ -8,5 +8,11 @@ export const config = {
   githubClientId: process.env.GITHUB_CLIENT_ID || '',
   githubClientSecret: process.env.GITHUB_CLIENT_SECRET || '',
   dbPath: process.env.DB_PATH || '',
-  nodeEnv: process.env.NODE_ENV || 'development'
+  nodeEnv: process.env.NODE_ENV || 'development',
+
+  // Hardening (PRD §15.3, Threat T-06)
+  maxBodyBytes: parseInt(process.env.MAX_BODY_BYTES || String(256 * 1024), 10),
+  rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || '60000', 10),
+  rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || '120', 10),
+  authRateLimitMax: parseInt(process.env.AUTH_RATE_LIMIT_MAX || '10', 10)
 };

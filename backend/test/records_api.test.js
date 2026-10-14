@@ -165,4 +165,70 @@ describe('Records API Lifecycle & Ingestion (TEST-013, TEST-014, TEST-016, TEST-
     });
     assert.strictEqual(getRes.status, 404);
   });
+
+  it('Withdrawal propagates tombstone in incremental pull (PRD FR-022, BR-011)', async () => {
+    // 1. Promote a fresh record
+    const testRecordId = '9b1f3c2e-0000-0000-0000-0857ef51a099';
+    const record = createValidRecord({
+      recordId: testRecordId
+    });
+
+    const promoteRes = await client('PUT', `/api/v1/teams/${team.id}/records/${testRecordId}/versions/1`, {
+      headers: { Authorization: `Bearer ${token}` },
+      body: record
+    });
+    assert.strictEqual(promoteRes.status, 200);
+    const promoteBody = await promoteRes.json();
+    const promotedSeq = promoteBody.seq;
+
+    // 2. Incremental pull before withdrawal captures it at promotedSeq
+    const pull1 = await client('GET', `/api/v1/teams/${team.id}/records?since=${promotedSeq - 1}&limit=10`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const pull1Body = await pull1.json();
+    const found1 = pull1Body.records.find(r => r.recordId === testRecordId);
+    assert.ok(found1);
+    assert.strictEqual(found1.isWithdrawn, false);
+
+    // 3. Withdraw the record
+    const delRes = await client('DELETE', `/api/v1/teams/${team.id}/records/${testRecordId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.strictEqual(delRes.status, 200);
+
+    // 4. Subsequent incremental pull with cursor = promotedSeq yields the tombstone
+    const pull2 = await client('GET', `/api/v1/teams/${team.id}/records?since=${promotedSeq}&limit=10`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const pull2Body = await pull2.json();
+    const found2 = pull2Body.records.find(r => r.recordId === testRecordId);
+    assert.ok(found2, 'Withdrawn record should be returned in incremental pull after promotedSeq');
+    assert.strictEqual(found2.isWithdrawn, true);
+    assert.strictEqual(found2.withdrawn, true);
+    assert.ok(found2.withdrawnAt);
+    assert.ok(found2.seq > promotedSeq, 'Tombstone sequence must advance cursor');
+  });
+
+  it('Non-author non-admin member cannot withdraw record (403 Forbidden)', async () => {
+    // Promote record as developer
+    const testRecordId = '9b1f3c2e-0000-0000-0000-0857ef51a088';
+    const record = createValidRecord({ recordId: testRecordId });
+    await client('PUT', `/api/v1/teams/${team.id}/records/${testRecordId}/versions/1`, {
+      headers: { Authorization: `Bearer ${token}` },
+      body: record
+    });
+
+    // Create another user who is only a member (not admin, not author)
+    const otherUser = createUser({ id: `u_other_${Date.now()}`, githubId: `gh_other_${Date.now()}`, handle: '@other_member' });
+    const otherToken = `lcp_other_tok_${Date.now()}`;
+    createApiToken({ id: `tok_other_${Date.now()}`, userId: otherUser.id, rawToken: otherToken });
+    const { addMember } = await import('../src/db/queries/teams.js');
+    addMember({ teamId: team.id, userId: otherUser.id, role: 'member' });
+
+    // Try to delete as otherUser
+    const delRes = await client('DELETE', `/api/v1/teams/${team.id}/records/${testRecordId}`, {
+      headers: { Authorization: `Bearer ${otherToken}` }
+    });
+    assert.strictEqual(delRes.status, 403);
+  });
 });

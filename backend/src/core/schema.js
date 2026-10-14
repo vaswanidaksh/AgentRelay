@@ -1,6 +1,7 @@
 import { ValidationError, SemanticError } from './errors.js';
 
 export const CURRENT_SCHEMA_VERSION = 'lcp.record/0.1';
+export const SUPPORTED_SCHEMA_VERSIONS = new Set(['lcp.record/0.1', 'agentrelay.record/0.1']);
 
 /**
  * Validates a context record against the LCP specification (PRD §13).
@@ -32,8 +33,8 @@ export function validateContextRecord(record) {
     throw new ValidationError('version must be an integer >= 1.');
   }
 
-  if (record.schemaVersion !== CURRENT_SCHEMA_VERSION) {
-    throw new ValidationError(`Unsupported schemaVersion: ${record.schemaVersion}. Expected ${CURRENT_SCHEMA_VERSION}`);
+  if (!SUPPORTED_SCHEMA_VERSIONS.has(record.schemaVersion)) {
+    throw new ValidationError(`Unsupported schemaVersion: ${record.schemaVersion}. Expected one of: ${Array.from(SUPPORTED_SCHEMA_VERSIONS).join(', ')}`);
   }
 
   // Author validation
