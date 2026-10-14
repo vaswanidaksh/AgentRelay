@@ -29,6 +29,18 @@ export function AuthProvider({ children }) {
     return newUser;
   }, []);
 
+  /**
+   * Called by AuthCallbackPage after the GitHub OAuth redirect.
+   * No API call needed — the backend already authenticated the user.
+   */
+  const loginWithToken = useCallback((newToken, newUser) => {
+    localStorage.setItem('ar_token', newToken);
+    localStorage.setItem('ar_user', JSON.stringify(newUser));
+    setToken(newToken);
+    setUser(newUser);
+    return newUser;
+  }, []);
+
   const logout = useCallback(() => {
     localStorage.removeItem('ar_token');
     localStorage.removeItem('ar_user');
@@ -37,8 +49,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, token, login, logout, isAuthenticated }),
-    [user, token, login, logout, isAuthenticated],
+    () => ({ user, token, login, loginWithToken, logout, isAuthenticated }),
+    [user, token, login, loginWithToken, logout, isAuthenticated],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

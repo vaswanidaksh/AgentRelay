@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
 import { initializeSchema, closeDb } from './db/index.js';
 import { config } from './config.js';
 import routes from './routes/index.js';
@@ -16,6 +17,9 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
   credentials: true
 }));
+
+// Cookie parser — required for GitHub OAuth CSRF state cookie
+app.use(cookieParser());
 
 // Oversized bodies are rejected with 413 before any route logic runs (Threat T-06)
 app.use(express.json({ limit: config.maxBodyBytes }));
