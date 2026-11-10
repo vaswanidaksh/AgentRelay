@@ -1,17 +1,31 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { getRecord, listTeams } from '../lib/api';
+import { getRecord, listTeams, listMembers, handoff, withdrawRecord } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 
 export default function SessionDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const teamIdParam = searchParams.get('teamId');
+  const { user } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [record, setRecord] = useState(null);
+  const [teamId, setTeamId] = useState(null);
+  const [members, setMembers] = useState([]);
   const [copied, setCopied] = useState(false);
+
+  // Handoff state
+  const [showHandoffModal, setShowHandoffModal] = useState(false);
+  const [handoffTarget, setHandoffTarget] = useState('');
+  const [handoffLoading, setHandoffLoading] = useState(false);
+  const [handoffSuccess, setHandoffSuccess] = useState('');
+  const [handoffError, setHandoffError] = useState('');
+
+  // Withdraw state
+  const [withdrawLoading, setWithdrawLoading] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -19,17 +33,27 @@ export default function SessionDetailPage() {
     async function loadRecord() {
       try {
         setLoading(true);
-        let teamId = teamIdParam;
-        if (!teamId) {
+        let resolvedTeamId = teamIdParam;
+        if (!resolvedTeamId) {
           const teams = await listTeams();
-          teamId = teams[0]?.id;
+          resolvedTeamId = teams[0]?.id;
         }
 
-        if (!teamId) throw new Error('No team found for record lookup.');
+        if (!resolvedTeamId) throw new Error('No team found for record lookup.');
+        setTeamId(resolvedTeamId);
 
-        const data = await getRecord(teamId, id);
+        const [data, memberList] = await Promise.all([
+          getRecord(resolvedTeamId, id),
+          listMembers(resolvedTeamId).catch(() => [])
+        ]);
+
         if (!isMounted) return;
         setRecord(data);
+        setMembers(memberList);
+        if (memberList.length > 0) {
+          const firstOther = memberList.find(m => m.handle !== user?.handle);
+          if (firstOther) setHandoffTarget(firstOther.handle);
+        }
       } catch (err) {
         if (!isMounted) return;
         setError(err.message || 'Failed to load record');
@@ -40,15 +64,70 @@ export default function SessionDetailPage() {
 
     loadRecord();
     return () => { isMounted = false; };
-  }, [id, teamIdParam]);
+  }, [id, teamIdParam, user?.handle]);
+
+  const generateMarkdownPack = () => {
+    if (!record) return '';
+    const content = record.content || {};
+    return `# ${content.title || 'Context Record'}\n\n**Record ID:** ${record.recordId}\n**Version:** ${record.version}\n**Author:** ${record.author?.handle || 'team'}\n**Agent:** ${record.source?.agent || 'cli'}\n**Schema:** ${record.schemaVersion || 'AgentRelay.record/0.1'}\n**Created:** ${record.times?.createdAt || new Date().toISOString()}\n\n## Summary\n${content.summary || ''}\n\n## Decisions\n${(content.decisions || []).map(d => `- ${d.text} (evidence: ${(d.evidence || []).join(', ')})`).join('\n')}\n\n## Files Touched\n${(content.filesTouched || []).map(f => `- \`${f}\``).join('\n')}\n\n## Tags\n${(content.tags || []).join(', ')}\n`;
+  };
 
   const handleCopyPack = () => {
-    if (!record) return;
-    const content = record.content || {};
-    const text = `# ${content.title || 'Context Record'}\n\n**Record ID:** ${record.recordId}\n**Author:** ${record.author?.handle || 'team'}\n**Agent:** ${record.source?.agent || 'cli'}\n\n## Summary\n${content.summary || ''}\n\n## Decisions\n${(content.decisions || []).map(d => `- ${d.text} (evidence: ${(d.evidence || []).join(', ')})`).join('\n')}\n\n## Files Touched\n${(content.filesTouched || []).map(f => `- \`${f}\``).join('\n')}\n`;
+    const text = generateMarkdownPack();
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDownloadPack = () => {
+    const text = generateMarkdownPack();
+    const blob = new Blob([text], { type: 'text/markdown;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `context-pack-${record?.recordId?.slice(0, 8) || 'export'}.md`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleHandoffSubmit = async (e) => {
+    e.preventDefault();
+    if (!teamId || !record?.recordId || !handoffTarget) return;
+
+    try {
+      setHandoffLoading(true);
+      setHandoffError('');
+      setHandoffSuccess('');
+      await handoff(teamId, record.recordId, handoffTarget);
+      setHandoffSuccess(`Handoff created! Record assigned to ${handoffTarget}.`);
+      setTimeout(() => {
+        setShowHandoffModal(false);
+        setHandoffSuccess('');
+      }, 1500);
+    } catch (err) {
+      setHandoffError(err.response?.data?.error?.message || err.message || 'Failed to create handoff.');
+    } finally {
+      setHandoffLoading(false);
+    }
+  };
+
+  const handleWithdrawRecord = async () => {
+    if (!teamId || !record?.recordId) return;
+    const confirmed = window.confirm(
+      'Are you sure you want to withdraw this record from the team?\n\nThis will write an audit event and propagate a tombstone deletion to teammates on their next sync.'
+    );
+    if (!confirmed) return;
+
+    try {
+      setWithdrawLoading(true);
+      await withdrawRecord(teamId, record.recordId);
+      navigate(`/dashboard?teamId=${teamId}`, { replace: true });
+    } catch (err) {
+      alert('Withdrawal failed: ' + (err.response?.data?.error?.message || err.message));
+      setWithdrawLoading(false);
+    }
   };
 
   if (loading) {
@@ -97,12 +176,47 @@ export default function SessionDetailPage() {
           </span>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
+          {/* Handoff Button */}
+          <button
+            onClick={() => setShowHandoffModal(true)}
+            className="px-3 py-1.5 rounded-lg text-xs font-mono bg-cyan-950/60 border border-cyan-500/30 text-cyan-300 font-semibold hover:bg-cyan-900/50 transition-colors flex items-center gap-1.5 cursor-pointer"
+          >
+            <span>🤝</span>
+            <span>Handoff</span>
+          </button>
+
+          {/* Download Pack */}
+          <button
+            onClick={handleDownloadPack}
+            className="px-3 py-1.5 rounded-lg text-xs font-mono bg-white/[0.06] border border-white/[0.1] text-white/80 hover:bg-white/[0.12] transition-colors cursor-pointer"
+          >
+            Download .md
+          </button>
+
+          {/* Analytics */}
+          <button
+            onClick={() => navigate(`/sessions/${record.recordId}/analytics?teamId=${teamId}`)}
+            className="px-3 py-1.5 rounded-lg text-xs font-mono bg-white/[0.06] border border-white/[0.1] text-white/80 hover:bg-white/[0.12] transition-colors cursor-pointer"
+          >
+            📊 Analytics
+          </button>
+
+          {/* Copy Context Pack */}
           <button
             onClick={handleCopyPack}
-            className="px-3 py-1.5 rounded-lg text-xs font-mono bg-white text-black font-semibold hover:bg-white/90 transition-colors"
+            className="px-3 py-1.5 rounded-lg text-xs font-mono bg-white text-black font-semibold hover:bg-white/90 transition-colors cursor-pointer"
           >
-            {copied ? 'Copied ✓' : 'Copy Context Pack'}
+            {copied ? 'Copied ✓' : 'Copy Pack'}
+          </button>
+
+          {/* Withdraw Record */}
+          <button
+            onClick={handleWithdrawRecord}
+            disabled={withdrawLoading}
+            className="px-3 py-1.5 rounded-lg text-xs font-mono bg-rose-950/40 border border-rose-500/25 text-rose-300 hover:bg-rose-900/40 transition-colors disabled:opacity-50 cursor-pointer"
+          >
+            {withdrawLoading ? 'Withdrawing…' : 'Withdraw'}
           </button>
         </div>
       </header>
@@ -217,6 +331,91 @@ export default function SessionDetailPage() {
           </div>
         </aside>
       </div>
+
+      {/* Handoff Modal */}
+      {showHandoffModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl border border-white/[0.1] bg-[#141414] p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-lg">🤝</span>
+                <h3 className="text-sm font-semibold text-white">Hand off Context Record</h3>
+              </div>
+              <button
+                onClick={() => { setShowHandoffModal(false); setHandoffError(''); setHandoffSuccess(''); }}
+                className="text-white/40 hover:text-white text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <p className="text-xs text-white/50 leading-relaxed font-sans">
+              Assign this context record to a teammate. They will receive it in their AgentRelay inbox with full evidence citations and origin metadata.
+            </p>
+
+            {handoffError && (
+              <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-500/25 text-rose-300 text-xs">
+                {handoffError}
+              </div>
+            )}
+
+            {handoffSuccess && (
+              <div className="p-3 rounded-lg bg-emerald-950/40 border border-emerald-500/25 text-emerald-300 text-xs">
+                {handoffSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleHandoffSubmit} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-mono text-white/40 mb-1.5 uppercase">
+                  Select Teammate (@handle)
+                </label>
+                {members.length > 0 ? (
+                  <select
+                    value={handoffTarget}
+                    onChange={(e) => setHandoffTarget(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.1] text-xs text-white focus:border-cyan-400 outline-hidden font-mono"
+                  >
+                    {members
+                      .filter(m => m.handle !== user?.handle)
+                      .map(m => (
+                        <option key={m.id} value={m.handle} className="bg-[#181818]">
+                          {m.handle} ({m.role})
+                        </option>
+                      ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    placeholder="@teammate"
+                    value={handoffTarget}
+                    onChange={(e) => setHandoffTarget(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.1] text-xs text-white focus:border-cyan-400 outline-hidden font-mono"
+                    required
+                  />
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-white/[0.06]">
+                <button
+                  type="button"
+                  onClick={() => setShowHandoffModal(false)}
+                  className="px-4 py-2 rounded-lg text-xs font-mono text-white/50 hover:bg-white/[0.05]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={handoffLoading || !handoffTarget}
+                  className="px-4 py-2 rounded-lg text-xs font-mono font-semibold bg-cyan-500 hover:bg-cyan-400 text-black transition-colors disabled:opacity-50"
+                >
+                  {handoffLoading ? 'Creating Handoff…' : 'Send Handoff'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

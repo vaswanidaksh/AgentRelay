@@ -1,6 +1,7 @@
 import { loadConfig, loadAuth } from '../config.js';
 import { getDb } from '../db.js';
 import { validateContextRecord } from '../core/schema.js';
+import { syncGlobalContextFiles } from '../core/contextExporter.js';
 
 export async function pullCommand(options) {
   const db = getDb();
@@ -119,4 +120,18 @@ export async function pullCommand(options) {
   }
 
   console.log(`✔ Incremental pull complete. Fetched ${totalPulled} record(s) from team store.`);
+
+  // Auto-sync global context packs and code files
+  try {
+    const syncResult = syncGlobalContextFiles(null, { writeCwd: true });
+    if (syncResult.count > 0) {
+      console.log(`✔ Synced ${syncResult.count} context pack(s) & ${syncResult.filesTouchedCount} referenced code file(s)`);
+      console.log(`  📄 Master Context: ${syncResult.indexFile}`);
+      if (syncResult.localProjectFile) {
+        console.log(`  📁 Local Workspace: ${syncResult.localProjectFile}`);
+      }
+    }
+  } catch (err) {
+    console.warn('Warning: Could not sync markdown context packs:', err.message);
+  }
 }

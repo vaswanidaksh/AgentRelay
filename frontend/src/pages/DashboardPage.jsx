@@ -2,7 +2,16 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import TiltCard from '../components/TiltCard';
-import { listTeams, listRecords, listMembers, createInvite } from '../lib/api';
+import {
+  listTeams,
+  listRecords,
+  listMembers,
+  createInvite,
+  listInbox,
+  markInboxRead,
+  listAuditTrail,
+  verifyAuditTrail,
+} from '../lib/api';
 
 export default function DashboardPage() {
   const { user, logout } = useAuth();
@@ -19,6 +28,77 @@ export default function DashboardPage() {
   const [search, setSearch] = useState('');
   const [person, setPerson] = useState('all');
   const [agent, setAgent] = useState('all');
+
+  // Inbox state
+  const [inboxItems, setInboxItems] = useState([]);
+  const [showInboxModal, setShowInboxModal] = useState(false);
+  const [inboxFilter, setInboxFilter] = useState('all');
+
+  // Audit state
+  const [showAuditModal, setShowAuditModal] = useState(false);
+  const [auditEvents, setAuditEvents] = useState([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditVerifyResult, setAuditVerifyResult] = useState(null);
+  const [auditError, setAuditError] = useState(null);
+
+  const fetchInbox = async () => {
+    try {
+      const items = await listInbox();
+      setInboxItems(items);
+    } catch (e) {
+      console.warn('Failed to fetch inbox:', e.message);
+    }
+  };
+
+  useEffect(() => {
+    fetchInbox();
+  }, []);
+
+  const handleMarkRead = async (id) => {
+    try {
+      await markInboxRead(id);
+      setInboxItems((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, state: 'read' } : item))
+      );
+    } catch (e) {
+      console.error('Failed to mark read:', e.message);
+    }
+  };
+
+  const handleOpenAudit = async () => {
+    if (!activeTeam) return;
+    setShowAuditModal(true);
+    setAuditLoading(true);
+    setAuditError(null);
+    setAuditVerifyResult(null);
+    try {
+      const data = await listAuditTrail(activeTeam.id);
+      setAuditEvents(data.events || []);
+    } catch (e) {
+      setAuditError(
+        e.response?.data?.error?.message ||
+          e.message ||
+          'Failed to load audit trail (admin privileges required).'
+      );
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  const handleVerifyAuditChain = async () => {
+    if (!activeTeam) return;
+    try {
+      setAuditLoading(true);
+      const res = await verifyAuditTrail(activeTeam.id);
+      setAuditVerifyResult(res);
+    } catch (e) {
+      setAuditError('Verification failed: ' + (e.response?.data?.error?.message || e.message));
+    } finally {
+      setAuditLoading(false);
+    }
+  };
+
+  const pendingInboxCount = inboxItems.filter((i) => i.state === 'pending').length;
 
   // Load teams on mount
   useEffect(() => {
@@ -163,15 +243,36 @@ export default function DashboardPage() {
           )}
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5 text-[11px] font-mono text-white/50">
+        <div className="flex items-center gap-3">
+          {/* Inbox Button */}
+          <button
+            onClick={() => { setShowInboxModal(true); fetchInbox(); }}
+            className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.10] text-white/80 transition-colors relative cursor-pointer"
+          >
+            <span>📥 Inbox</span>
+            {pendingInboxCount > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-cyan-400 text-black text-[10px] font-bold">
+                {pendingInboxCount}
+              </span>
+            )}
+          </button>
+
+          {/* Audit Trail Button */}
+          <button
+            onClick={handleOpenAudit}
+            className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.10] text-white/80 transition-colors cursor-pointer"
+          >
+            <span>🛡️ Audit Trail</span>
+          </button>
+
+          <div className="flex items-center gap-1.5 text-[11px] font-mono text-white/50 pl-2 border-l border-white/[0.06]">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            LCP Server Connected (Port 4000)
+            LCP Server (Port 4000)
           </div>
 
           <button
             onClick={logout}
-            className="text-[12px] text-white/40 hover:text-white/70 transition-colors"
+            className="text-[12px] text-white/40 hover:text-white/70 transition-colors cursor-pointer"
           >
             Sign out
           </button>
@@ -344,6 +445,243 @@ export default function DashboardPage() {
           )}
         </main>
       </div>
+
+      {/* ── Inbox Modal ──────────────────────────────────────────────────────── */}
+      {showInboxModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl max-h-[85vh] rounded-2xl border border-white/[0.1] bg-[#121212] p-6 shadow-2xl flex flex-col space-y-4">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">📥</span>
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Context Handoff Inbox</h3>
+                  <p className="text-[11px] font-mono text-white/40">PRD FR-023 Handoff & Inbox Engine</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowInboxModal(false)}
+                className="text-white/40 hover:text-white text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Filter pills */}
+            <div className="flex items-center gap-2">
+              {['all', 'pending', 'read'].map((f) => (
+                <button
+                  key={f}
+                  onClick={() => setInboxFilter(f)}
+                  className={`px-3 py-1 rounded-lg text-xs font-mono capitalize transition-all cursor-pointer ${
+                    inboxFilter === f
+                      ? 'bg-white/[0.12] text-white font-semibold'
+                      : 'text-white/40 hover:bg-white/[0.04] hover:text-white/70'
+                  }`}
+                >
+                  {f} {f === 'pending' && pendingInboxCount > 0 ? `(${pendingInboxCount})` : ''}
+                </button>
+              ))}
+            </div>
+
+            {/* List */}
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+              {inboxItems
+                .filter((item) => (inboxFilter === 'all' ? true : item.state === inboxFilter))
+                .length === 0 ? (
+                <div className="py-12 text-center text-xs text-white/30 space-y-2">
+                  <p className="text-2xl opacity-40">📭</p>
+                  <p>No handoff items in this category.</p>
+                  <p className="text-[11px] text-white/20">
+                    When a teammate runs <code className="text-cyan-400">agentrelay handoff &lt;recordId&gt; @{user?.handle?.replace('@', '') || 'you'}</code>, it will appear here.
+                  </p>
+                </div>
+              ) : (
+                inboxItems
+                  .filter((item) => (inboxFilter === 'all' ? true : item.state === inboxFilter))
+                  .map((item) => (
+                    <div
+                      key={item.id}
+                      className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.12] transition-colors space-y-2"
+                    >
+                      <div className="flex items-center justify-between text-xs">
+                        <div className="flex items-center gap-2 font-mono">
+                          <span className="text-cyan-400 font-semibold">{item.fromHandle}</span>
+                          <span className="text-white/30">→ you in</span>
+                          <span className="text-white/60 bg-white/[0.05] px-1.5 py-0.5 rounded text-[10px]">
+                            {item.teamName}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase ${
+                              item.state === 'pending'
+                                ? 'bg-amber-950/40 text-amber-300 border border-amber-500/20'
+                                : 'bg-white/[0.04] text-white/40'
+                            }`}
+                          >
+                            {item.state}
+                          </span>
+                          <span className="text-[10px] font-mono text-white/30">
+                            {new Date(item.createdAt).toLocaleDateString()}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <h4 className="text-xs font-semibold text-white/90">
+                          {item.record?.title || 'Shared Context Record'}
+                        </h4>
+                        {item.record?.summary && (
+                          <p className="text-[11px] text-white/50 line-clamp-2 mt-0.5">
+                            {item.record.summary}
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.04]">
+                        {item.state === 'pending' && (
+                          <button
+                            onClick={() => handleMarkRead(item.id)}
+                            className="px-2.5 py-1 rounded text-[11px] font-mono text-white/50 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] transition-colors cursor-pointer"
+                          >
+                            Mark Read
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setShowInboxModal(false);
+                            navigate(`/sessions/${item.recordId}?teamId=${item.teamId}`);
+                          }}
+                          className="px-3 py-1 rounded text-[11px] font-mono font-semibold bg-white text-black hover:bg-white/90 transition-colors cursor-pointer"
+                        >
+                          View Context →
+                        </button>
+                      </div>
+                    </div>
+                  ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Audit Trail Modal ─────────────────────────────────────────────────── */}
+      {showAuditModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-3xl max-h-[85vh] rounded-2xl border border-white/[0.1] bg-[#121212] p-6 shadow-2xl flex flex-col space-y-4">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xl">🛡️</span>
+                <div>
+                  <h3 className="text-sm font-semibold text-white">Tamper-Evident Audit Trail</h3>
+                  <p className="text-[11px] font-mono text-white/40">SHA-256 Hash Chain Integrity (PRD §14.2, §20)</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleVerifyAuditChain}
+                  disabled={auditLoading}
+                  className="px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-emerald-500 hover:bg-emerald-400 text-black transition-colors disabled:opacity-50 cursor-pointer"
+                >
+                  {auditLoading ? 'Verifying…' : 'Verify SHA-256 Chain'}
+                </button>
+                <button
+                  onClick={() => setShowAuditModal(false)}
+                  className="text-white/40 hover:text-white text-sm cursor-pointer ml-2"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+
+            {/* Verification Result Banner */}
+            {auditVerifyResult && (
+              <div
+                className={`p-3.5 rounded-xl border text-xs font-mono ${
+                  auditVerifyResult.valid
+                    ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
+                    : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+                }`}
+              >
+                {auditVerifyResult.valid ? (
+                  <div>
+                    <div className="font-bold flex items-center gap-1.5">
+                      <span>✔</span> Cryptographic Audit Trail Intact
+                    </div>
+                    <div className="text-[11px] text-white/50 mt-1">
+                      Verified {auditVerifyResult.checked} chained event(s). Head hash:{' '}
+                      <code className="text-emerald-400 select-all">{auditVerifyResult.headHash?.slice(0, 24)}…</code>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="font-bold">❌ Integrity Compromised</div>
+                    <div className="text-[11px] mt-1">
+                      Reason: {auditVerifyResult.brokenAt?.reason} at sequence #{auditVerifyResult.brokenAt?.seq} (ID: {auditVerifyResult.brokenAt?.id})
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {auditError && (
+              <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-500/25 text-rose-300 text-xs">
+                {auditError}
+              </div>
+            )}
+
+            {/* Event Log Table */}
+            <div className="flex-1 overflow-y-auto pr-1">
+              {auditEvents.length === 0 ? (
+                <div className="py-12 text-center text-xs text-white/30">
+                  {auditLoading ? 'Loading audit trail…' : 'No audit events recorded for this team.'}
+                </div>
+              ) : (
+                <table className="w-full text-left text-xs font-mono">
+                  <thead>
+                    <tr className="border-b border-white/[0.08] text-[10px] uppercase text-white/30">
+                      <th className="py-2 px-2">Seq</th>
+                      <th className="py-2 px-2">Action</th>
+                      <th className="py-2 px-2">Actor</th>
+                      <th className="py-2 px-2">Record ID</th>
+                      <th className="py-2 px-2">Time</th>
+                      <th className="py-2 px-2">Hash</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/[0.04]">
+                    {auditEvents.map((ev) => (
+                      <tr key={ev.id} className="hover:bg-white/[0.02]">
+                        <td className="py-2 px-2 text-white/30">#{ev.seq}</td>
+                        <td className="py-2 px-2">
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] ${
+                              ev.action.includes('promote')
+                                ? 'bg-emerald-950/50 text-emerald-300 border border-emerald-500/20'
+                                : ev.action.includes('handoff')
+                                ? 'bg-cyan-950/50 text-cyan-300 border border-cyan-500/20'
+                                : ev.action.includes('withdraw')
+                                ? 'bg-rose-950/50 text-rose-300 border border-rose-500/20'
+                                : 'bg-white/[0.05] text-white/60'
+                            }`}
+                          >
+                            {ev.action}
+                          </span>
+                        </td>
+                        <td className="py-2 px-2 text-white/80">{ev.actorHandle || ev.actorId?.slice(0, 8)}</td>
+                        <td className="py-2 px-2 text-white/40 truncate max-w-[120px]">{ev.recordId || '—'}</td>
+                        <td className="py-2 px-2 text-white/30 text-[10px]">{new Date(ev.ts).toLocaleTimeString()}</td>
+                        <td className="py-2 px-2 text-white/20 text-[10px] truncate max-w-[80px]" title={ev.hash}>
+                          {ev.hash ? ev.hash.slice(0, 8) + '…' : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

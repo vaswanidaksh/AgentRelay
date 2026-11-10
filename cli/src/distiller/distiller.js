@@ -105,6 +105,9 @@ async function distillSessionEvents(session, events, config) {
     }
   }
 
+  const initialLabel = Object.keys(redactionCounts).length > 0 ? 'review' : 'none';
+  const finalSensitivityLabel = await evaluateSecondPassSensitivity(events, config, initialLabel);
+
   return {
     recordId,
     version: 1,
@@ -140,7 +143,7 @@ async function distillSessionEvents(session, events, config) {
       tags: llmOutput.tags || ['agent-session', session.project_tag],
     },
     sensitivity: {
-      label: Object.keys(redactionCounts).length > 0 ? 'review' : 'none',
+      label: finalSensitivityLabel,
       scrubberVersion: SCRUBBER_VERSION,
       redactionCounts,
     },
@@ -227,4 +230,74 @@ function extractFilesTouched(events) {
   }
 
   return Array.from(files);
+}
+
+/**
+ * Evaluates second-pass sensitivity check (PRD §8.1 FR-011, §16.3, BR-002).
+ * Inspects transcript chunks for credentials in prose, internal hostnames, or confidential data.
+ * Acceptance criteria: Can raise sensitivity to 'review'; can NEVER lower it.
+ *
+ * @param {Array} events Scrubbed session events
+ * @param {object} config Local config
+ * @param {string} initialLabel Current label ('none', 'review', or 'restricted')
+ * @returns {Promise<string>} Final sensitivity label ('review' or initialLabel)
+ */
+export async function evaluateSecondPassSensitivity(events, config = {}, initialLabel = 'none') {
+  // Rule: Can never lower sensitivity.
+  if (initialLabel === 'review' || initialLabel === 'restricted') {
+    return initialLabel;
+  }
+
+  // 1. Try local LLM endpoint if configured
+  if (config.modelRuntimeUrl) {
+    try {
+      const eventsSample = events.slice(0, 30).map(e => `[${e.id}] (${e.kind}): ${e.text_scrubbed}`).join('\n');
+      const response = await fetch(`${config.modelRuntimeUrl}/api/generate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: config.modelName || 'qwen2.5-coder:7b',
+          prompt: `You are a security classifier. Analyze the following transcript events for sensitive data not caught by standard regexes: internal hostnames (*.corp, *.internal), prose passwords or credentials, or confidential PII.
+Respond ONLY with JSON: {"sensitive": boolean, "reason": "string"}
+
+Events:
+${eventsSample}`,
+          stream: false,
+          format: 'json',
+        }),
+        signal: AbortSignal.timeout(3000),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const parsed = JSON.parse(data.response);
+        if (parsed.sensitive === true) {
+          return 'review';
+        }
+      }
+    } catch {
+      // Local model unreachable; fall back to deterministic heuristics
+    }
+  }
+
+  // 2. Offline / Heuristic Second-Pass Classifier
+  // Looks for prose credentials, internal hostnames, and private IP patterns
+  const internalHostRegex = /\b[a-zA-Z0-9_-]+\.(?:corp|internal|lan|local|intranet)\b/i;
+  const proseCredentialRegex = /(?:password|passwd|secret|api[_-]?key|bearer\s+token|auth\s+token)\s*(?:is|=|:|\bto\b)\s*['"]?[^\s'"]{4,}/i;
+  const privateIpRegex = /\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[0-1])\.\d{1,3}\.\d{1,3})\b/;
+  const ssnRegex = /\b\d{3}-\d{2}-\d{4}\b/;
+
+  for (const evt of events) {
+    const text = evt.text_scrubbed || '';
+    if (
+      internalHostRegex.test(text) ||
+      proseCredentialRegex.test(text) ||
+      privateIpRegex.test(text) ||
+      ssnRegex.test(text)
+    ) {
+      return 'review';
+    }
+  }
+
+  return initialLabel;
 }
