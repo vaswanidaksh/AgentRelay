@@ -151,7 +151,7 @@ export default function LandingPage() {
               </div>
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-white/25 animate-pulse" />
-                <span className="font-mono text-[11px] text-white/25">socket connected</span>
+                <span className="font-mono text-[11px] text-white/25">daemon connected</span>
               </div>
             </div>
 

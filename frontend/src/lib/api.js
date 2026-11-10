@@ -139,7 +139,7 @@ export async function withdrawRecord(teamId, recordId) {
 export async function listInbox(state) {
   const query = state ? `?state=${encodeURIComponent(state)}` : '';
   const res = await apiClient.get(`/inbox${query}`);
-  return res.data.items || [];
+  return res.data.inbox || res.data.items || [];
 }
 
 /** PATCH /api/v1/inbox/:id */
@@ -152,7 +152,7 @@ export async function markInboxRead(id) {
 export async function handoff(teamId, recordId, toHandle) {
   const res = await apiClient.post(`/teams/${teamId}/handoffs`, {
     recordId,
-    toHandle: toHandle.startsWith('@') ? toHandle : `@${toHandle}`
+    to: toHandle.startsWith('@') ? toHandle : `@${toHandle}`
   });
   return res.data;
 }

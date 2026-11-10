@@ -222,6 +222,34 @@ if (searchRecords.length > 0) {
   heading('TEST 12 — agentrelay unshare');
   const unshareOutput = run(`unshare ${rec.recordId}`);
   check('Unshare succeeds', unshareOutput.includes('FALSE'));
+
+  // ─── Test 12b: Sync ────────────────────────────────────────
+  heading('TEST 12b — agentrelay sync');
+  const syncOutput = run('sync');
+  check('Sync completes successfully', syncOutput.includes('Global Context Sync Complete') || syncOutput.includes('synced'));
+  const contextMdPath = path.join(TEST_DIR, '.agentrelay', 'context', 'CONTEXT.md');
+  check('Global CONTEXT.md generated', fs.existsSync(contextMdPath));
+  if (fs.existsSync(contextMdPath)) {
+    const contextContent = fs.readFileSync(contextMdPath, 'utf-8');
+    check('CONTEXT.md includes files touched', contextContent.includes('Global Code Files'));
+  }
+
+  // ─── Test 12c: MCP stdio server ───────────────────────────
+  heading('TEST 12c — agentrelay mcp (JSON-RPC stdio)');
+  const mcpInput = [
+    JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2024-11-05' } }),
+    JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }),
+  ].join('\n') + '\n';
+
+  const mcpResult = execSync(`node "${CLI_BIN}" mcp`, {
+    input: mcpInput,
+    encoding: 'utf-8',
+    env: { ...process.env, AGENTRELAY_HOME: path.join(TEST_DIR, '.agentrelay') },
+    timeout: 5000,
+  });
+
+  check('MCP server responds to initialize', mcpResult.includes('agentrelay-mcp'));
+  check('MCP server responds with tools', mcpResult.includes('search_context') && mcpResult.includes('show_record'));
 }
 
 // ─── Test 13: Pause / Resume ─────────────────────────────────

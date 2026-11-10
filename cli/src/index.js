@@ -17,6 +17,8 @@ import { retryCommand } from './commands/retry.js';
 import { purgeCommand } from './commands/purge.js';
 import { exportCommand } from './commands/export.js';
 import { daemonCommand } from './commands/daemon.js';
+import { syncCommand } from './commands/sync.js';
+import { mcpCommand } from './commands/mcp.js';
 
 export function createProgram() {
   const program = new Command();
@@ -114,6 +116,11 @@ export function createProgram() {
     .action((options) => pullCommand(options));
 
   program
+    .command('sync')
+    .description('Pull all team context records and export global code files & chats')
+    .action((options) => syncCommand(options));
+
+  program
     .command('handoff <recordId> <handle>')
     .description('Assign a context record to a teammate with notification')
     .option('--team <teamId>', 'Target team ID')
@@ -149,6 +156,11 @@ export function createProgram() {
     .command('daemon')
     .description('Start the background watcher and distiller loop')
     .action(daemonCommand);
+
+  program
+    .command('mcp')
+    .description('Start Model Context Protocol (MCP) server over stdio for coding agents')
+    .action((options) => mcpCommand(options));
 
   return program;
 }
