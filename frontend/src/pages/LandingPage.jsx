@@ -62,7 +62,7 @@ export default function LandingPage() {
   }, []);
 
   const copyInstall = () => {
-    navigator.clipboard.writeText('curl -fsSL https://agentrelay.dev/install.sh | sh');
+    navigator.clipboard.writeText('npx agentrelay-cli init');
     setCopied(true);
     setTimeout(() => setCopied(false), 2200);
   };
@@ -110,26 +110,24 @@ export default function LandingPage() {
 
           {/* CTAs */}
           <div className="mt-9 flex flex-col sm:flex-row items-center justify-center gap-3">
-            <Link
-              to="/dashboard"
-              className="btn-shimmer w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 transition-colors shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_8px_32px_rgba(255,255,255,0.06)]"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 16 16">
-                <path d="M8 2v9M4 8l4 4 4-4" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              Install for macOS
-            </Link>
-
             <button
               onClick={copyInstall}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-white/[0.08] bg-white/[0.03] text-xs font-mono text-white/45 hover:bg-white/[0.06] hover:border-white/[0.14] hover:text-white/65 transition-all duration-200"
+              className="btn-shimmer w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 py-3 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 transition-colors shadow-[0_0_0_1px_rgba(255,255,255,0.08),0_8px_32px_rgba(255,255,255,0.06)] cursor-pointer"
             >
-              <span className="text-white/30">$</span>
-              curl -fsSL agentrelay.dev/install.sh | sh
-              <span className="ml-1 px-2 py-0.5 rounded text-[10px] font-sans font-medium bg-white/[0.06] text-white/40 border border-white/[0.08]">
+              <span className="font-mono font-normal text-black/60">$</span>
+              npx agentrelay-cli init
+              <span className="ml-1 px-2 py-0.5 rounded text-[10px] font-normal bg-black/[0.08] text-black/50 border border-black/[0.1]">
                 {copied ? 'Copied ✓' : 'Copy'}
               </span>
             </button>
+
+            <Link
+              to="/docs"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl border border-white/[0.08] bg-white/[0.03] text-sm font-medium text-white/50 hover:bg-white/[0.06] hover:border-white/[0.14] hover:text-white/75 transition-all duration-200"
+            >
+              Read the docs
+              <span className="text-white/30">→</span>
+            </Link>
           </div>
         </div>
 
@@ -411,12 +409,23 @@ export default function LandingPage() {
           <p className="mt-5 text-base text-white/30 font-light">
             Start syncing your team's AI sessions in under 60 seconds.
           </p>
-          <div className="mt-8 flex items-center justify-center gap-4">
-            <Link
-              to="/dashboard"
-              className="btn-shimmer inline-flex items-center gap-2.5 px-7 py-3.5 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 transition-colors shadow-[0_8px_40px_rgba(255,255,255,0.08)]"
+          <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <button
+              onClick={copyInstall}
+              className="btn-shimmer w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-6 py-3.5 rounded-xl bg-white text-black text-sm font-semibold hover:bg-white/90 transition-colors shadow-[0_8px_40px_rgba(255,255,255,0.08)] cursor-pointer"
             >
-              Get started — it's free
+              <span className="font-mono font-normal text-black/60">$</span>
+              npx agentrelay-cli init
+              <span className="ml-1 px-2 py-0.5 rounded text-[10px] font-normal bg-black/[0.08] text-black/50 border border-black/[0.1]">
+                {copied ? 'Copied ✓' : 'Copy'}
+              </span>
+            </button>
+            <Link
+              to="/docs"
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3.5 rounded-xl border border-white/[0.08] bg-white/[0.03] text-sm font-medium text-white/50 hover:bg-white/[0.06] hover:border-white/[0.14] hover:text-white/75 transition-all duration-200"
+            >
+              Explore CLI Docs
+              <span className="text-white/30">→</span>
             </Link>
           </div>
         </div>
