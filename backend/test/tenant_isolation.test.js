@@ -87,4 +87,26 @@ describe('Tenant Isolation Suite (TEST-015, BR-007)', () => {
     });
     assert.strictEqual(res.status, 404);
   });
+
+  it('Bob CANNOT delete Team Alpha (returns 404 not found / access denied)', async () => {
+    const res = await client('DELETE', `/api/v1/teams/${teamAlpha.id}`, {
+      headers: { Authorization: `Bearer ${tokenB}` }
+    });
+    assert.strictEqual(res.status, 404);
+  });
+
+  it('Alice can delete her own Team Alpha workspace', async () => {
+    const res = await client('DELETE', `/api/v1/teams/${teamAlpha.id}`, {
+      headers: { Authorization: `Bearer ${tokenA}` }
+    });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.strictEqual(body.teamId, teamAlpha.id);
+
+    // Verify it is gone
+    const checkRes = await client('GET', `/api/v1/teams/${teamAlpha.id}/members`, {
+      headers: { Authorization: `Bearer ${tokenA}` }
+    });
+    assert.strictEqual(checkRes.status, 404);
+  });
 });

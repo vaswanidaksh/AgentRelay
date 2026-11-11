@@ -65,8 +65,34 @@ export async function teamCommand(action, arg, options) {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error?.message || 'Failed to join team');
       console.log(`✔ Joined team "${data.team?.name || 'Team'}" successfully.`);
+    } else if (action === 'delete' || action === 'remove') {
+      const teamId = arg;
+      if (!teamId) {
+        console.error('Error: Team ID required. Usage: agentrelay team remove <teamId>');
+        process.exit(1);
+      }
+      const res = await fetch(`${config.serverUrl}/api/v1/teams/${teamId}`, {
+        method: 'DELETE',
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message || 'Failed to remove team');
+      console.log(`✔ Removed team workspace ${teamId} successfully.`);
+    } else if (action === 'leave') {
+      const teamId = arg;
+      if (!teamId) {
+        console.error('Error: Team ID required. Usage: agentrelay team leave <teamId>');
+        process.exit(1);
+      }
+      const res = await fetch(`${config.serverUrl}/api/v1/teams/${teamId}/leave`, {
+        method: 'POST',
+        headers,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error?.message || 'Failed to leave team');
+      console.log(`✔ Left team workspace ${teamId} successfully.`);
     } else {
-      console.error(`Unknown team action: ${action}. Use 'create', 'invite', 'join', or 'list'.`);
+      console.error(`Unknown team action: ${action}. Use 'create', 'invite', 'join', 'list', 'remove', or 'leave'.`);
     }
   } catch (err) {
     console.error('Team operation failed:', err.message);

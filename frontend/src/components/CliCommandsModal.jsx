@@ -109,6 +109,18 @@ export default function CliCommandsModal({ isOpen, onClose, activeTeamId, record
           desc: 'Create a new team workspace',
         },
         {
+          id: 'team_remove',
+          name: 'Remove Team Workspace',
+          cmd: `agentrelay team remove ${currentTeam}`,
+          desc: 'Delete a team workspace (requires admin role)',
+        },
+        {
+          id: 'team_leave',
+          name: 'Leave Team Workspace',
+          cmd: `agentrelay team leave ${currentTeam}`,
+          desc: 'Leave a team workspace',
+        },
+        {
           id: 'handoff',
           name: 'Handoff to Teammate',
           cmd: `agentrelay handoff ${currentRecord} @teammate`,
