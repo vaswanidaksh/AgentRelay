@@ -5,6 +5,8 @@ import { requireAuth } from '../middleware/auth.js';
 import {
   findUserByGithubId,
   findUserById,
+  findUserByHandle,
+  findUserByToken,
   createUser,
   createApiToken,
   revokeToken
@@ -145,6 +147,43 @@ router.get('/auth/github/callback', async (req, res, next) => {
 const handleAuth = async (req, res, next) => {
   try {
     let { githubId, handle, code, token, email } = req.body;
+    const credential = (code || token || '').trim();
+
+    // 1. If the user passed an existing LCP token (lcp_pat_...) from the Web Dashboard
+    if (credential.startsWith('lcp_pat_')) {
+      const existingTokenUser = findUserByToken(credential);
+      if (existingTokenUser) {
+        return res.status(200).json({
+          token: credential,
+          user: {
+            id: existingTokenUser.id,
+            githubId: existingTokenUser.github_id,
+            handle: existingTokenUser.handle,
+            name: existingTokenUser.handle.replace(/^@/, '')
+          }
+        });
+      }
+    }
+
+    // 2. If handle or credential matches an existing user (e.g., signed in via GitHub OAuth on Web)
+    const candidateHandle = handle || (credential && credential !== 'demo-github-token' && !credential.includes(' ') ? credential : null);
+    if (!githubId && candidateHandle) {
+      const existingByHandle = findUserByHandle(candidateHandle);
+      if (existingByHandle) {
+        const rawToken = `lcp_pat_${crypto.randomBytes(24).toString('hex')}`;
+        const tokenId = `tok_${uuidv4().slice(0, 8)}`;
+        createApiToken({ id: tokenId, userId: existingByHandle.id, rawToken });
+        return res.status(200).json({
+          token: rawToken,
+          user: {
+            id: existingByHandle.id,
+            githubId: existingByHandle.github_id,
+            handle: existingByHandle.handle,
+            name: existingByHandle.handle.replace(/^@/, '')
+          }
+        });
+      }
+    }
 
     if (!githubId && email) {
       const emailClean = email.toLowerCase().trim();
@@ -153,10 +192,13 @@ const handleAuth = async (req, res, next) => {
         handle = `@${emailClean.split('@')[0]}`;
       }
     } else if (!githubId && (code || token)) {
-      const credential = code || token;
       githubId = `gh_${crypto.createHash('sha256').update(credential).digest('hex').slice(0, 10)}`;
       if (!handle) {
-        handle = `@dev_${githubId.slice(3, 8)}`;
+        if (credential !== 'demo-github-token' && /^[a-zA-Z0-9_-]{2,39}$/.test(credential.replace(/^@/, ''))) {
+          handle = `@${credential.replace(/^@/, '')}`;
+        } else {
+          handle = `@dev_${githubId.slice(3, 8)}`;
+        }
       }
     }
 
@@ -164,7 +206,7 @@ const handleAuth = async (req, res, next) => {
       throw new ValidationError('githubId and handle (or email, code, token) are required.');
     }
 
-    let user = findUserByGithubId(githubId);
+    let user = findUserByGithubId(githubId) || findUserByHandle(handle);
     if (!user) {
       const userId = `u_${uuidv4().replace(/-/g, '').slice(0, 12)}`;
       user = createUser({
