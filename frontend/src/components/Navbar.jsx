@@ -104,7 +104,7 @@ export default function Navbar() {
                 Sign in
               </Link>
               <Link
-                to="/dashboard"
+                to="/docs"
                 className="btn-shimmer inline-flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-semibold bg-white text-black hover:bg-white/90 transition-colors duration-200 shadow-[0_0_0_1px_rgba(255,255,255,0.08)]"
               >
                 Get started
@@ -156,7 +156,7 @@ export default function Navbar() {
             Docs
           </Link>
           <Link
-            to="/dashboard"
+            to="/docs"
             onClick={() => setMobileOpen(false)}
             className="block w-full text-center mt-4 py-2.5 rounded-lg bg-white text-black text-sm font-semibold"
           >
