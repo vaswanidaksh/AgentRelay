@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { getRecord, listTeams, listMembers, handoff, withdrawRecord } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import CliCommandsModal from '../components/CliCommandsModal';
 
 export default function SessionDetailPage() {
   const { id } = useParams();
@@ -16,6 +17,9 @@ export default function SessionDetailPage() {
   const [teamId, setTeamId] = useState(null);
   const [members, setMembers] = useState([]);
   const [copied, setCopied] = useState(false);
+  const [copiedRecordId, setCopiedRecordId] = useState(false);
+  const [copiedPromoteCmd, setCopiedPromoteCmd] = useState(false);
+  const [showCliModal, setShowCliModal] = useState(false);
 
   // Handoff state
   const [showHandoffModal, setShowHandoffModal] = useState(false);
@@ -77,6 +81,23 @@ export default function SessionDetailPage() {
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyRecordId = () => {
+    if (!record?.recordId) return;
+    navigator.clipboard.writeText(record.recordId);
+    setCopiedRecordId(true);
+    setTimeout(() => setCopiedRecordId(false), 2000);
+  };
+
+  const handleCopyPromoteCmd = () => {
+    if (!record?.recordId) return;
+    const cmd = teamId
+      ? `agentrelay promote ${record.recordId} --team ${teamId}`
+      : `agentrelay promote ${record.recordId}`;
+    navigator.clipboard.writeText(cmd);
+    setCopiedPromoteCmd(true);
+    setTimeout(() => setCopiedPromoteCmd(false), 2000);
   };
 
   const handleDownloadPack = () => {
@@ -177,6 +198,28 @@ export default function SessionDetailPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* CLI Commands Reference Modal trigger */}
+          <button
+            onClick={() => setShowCliModal(true)}
+            className="flex items-center gap-1.5 text-xs font-mono px-2.5 py-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.10] text-emerald-300 transition-colors cursor-pointer"
+            title="Open CLI Commands Guide"
+          >
+            <span>⚡</span>
+            <span className="hidden sm:inline">Commands</span>
+          </button>
+
+          {/* Docs link */}
+          <Link
+            to="/docs"
+            className="flex items-center gap-1.5 text-xs font-mono px-2.5 py-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.10] text-white/70 hover:text-white transition-colors"
+            title="Open Documentation"
+          >
+            <span>📖</span>
+            <span className="hidden sm:inline">Docs</span>
+          </Link>
+
+          <div className="h-4 w-px bg-white/[0.08] hidden sm:block" />
+
           {/* Handoff Button */}
           <button
             onClick={() => setShowHandoffModal(true)}
@@ -220,6 +263,37 @@ export default function SessionDetailPage() {
           </button>
         </div>
       </header>
+
+      {/* Record ID & CLI Quick-Action Bar */}
+      <div className="bg-[#0e0e0e] border-b border-white/[0.06] px-5 sm:px-8 py-3">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-mono">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-white/40 uppercase tracking-wider text-[10px]">Record ID:</span>
+            <code className="bg-black/60 border border-white/[0.08] px-2.5 py-1 rounded text-cyan-300 font-mono select-all text-xs">
+              {record.recordId}
+            </code>
+            <button
+              onClick={handleCopyRecordId}
+              className="px-2 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] text-white/70 hover:text-white transition-colors cursor-pointer text-[11px]"
+            >
+              {copiedRecordId ? 'Copied ID ✓' : 'Copy ID'}
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-white/40 uppercase tracking-wider text-[10px]">CLI Promote:</span>
+            <code className="bg-black/60 border border-emerald-500/20 px-2.5 py-1 rounded text-emerald-300 font-mono select-all text-xs">
+              agentrelay promote {record.recordId}{teamId ? ` --team ${teamId}` : ''}
+            </code>
+            <button
+              onClick={handleCopyPromoteCmd}
+              className="px-2 py-1 rounded bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-300 transition-colors cursor-pointer text-[11px]"
+            >
+              {copiedPromoteCmd ? 'Copied Cmd ✓' : 'Copy Command'}
+            </button>
+          </div>
+        </div>
+      </div>
 
       {/* Main Grid */}
       <div className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-7 grid lg:grid-cols-12 gap-6">
@@ -416,6 +490,14 @@ export default function SessionDetailPage() {
           </div>
         </div>
       )}
+
+      {/* CLI Commands Reference Modal */}
+      <CliCommandsModal
+        isOpen={showCliModal}
+        onClose={() => setShowCliModal(false)}
+        activeTeamId={teamId}
+        activeRecordId={record?.recordId}
+      />
     </div>
   );
 }
