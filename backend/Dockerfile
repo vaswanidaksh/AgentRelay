@@ -2,7 +2,7 @@
 # Dockerfile — AgentRelay LCP Team Synchronization Server (PRD §21)
 # ─────────────────────────────────────────────────────────────────────────────
 
-FROM node:20-bookworm-slim AS builder
+FROM node:22-bookworm-slim AS builder
 
 WORKDIR /app
 
@@ -14,10 +14,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
  && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-RUN npm ci --omit=dev
+ENV NPM_CONFIG_BUILD_FROM_SOURCE=true
+RUN npm ci --omit=dev && npm rebuild better-sqlite3
 
 # ── Runtime Stage ────────────────────────────────────────────────────────────
-FROM node:20-bookworm-slim AS runner
+FROM node:22-bookworm-slim AS runner
 
 WORKDIR /app
 
