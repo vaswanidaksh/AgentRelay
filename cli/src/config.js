@@ -53,8 +53,9 @@ export function loadConfig() {
     const merged = { ...getDefaultConfig(), ...parsed };
     if (process.env.SERVER_URL) {
       merged.serverUrl = process.env.SERVER_URL;
-    } else if (merged.serverUrl === 'http://localhost:4000') {
+    } else if (!merged.serverUrl || merged.serverUrl.includes('localhost')) {
       merged.serverUrl = 'https://agentrelay-backend.onrender.com';
+      fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), 'utf-8');
     }
     return merged;
   } catch {

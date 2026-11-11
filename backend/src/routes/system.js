@@ -3,6 +3,20 @@ import { getDb } from '../db/connection.js';
 
 const router = express.Router();
 
+router.get('/', (req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'AgentRelay LCP Team Server',
+    version: '1.0.0',
+    endpoints: {
+      health: '/healthz',
+      metrics: '/metrics',
+      api: '/api/v1'
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
 router.get('/healthz', (req, res) => {
   try {
     const db = getDb();
