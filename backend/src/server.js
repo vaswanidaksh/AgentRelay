@@ -54,7 +54,7 @@ const isDirectRun = process.argv[1] && (
 
 if (isDirectRun) {
   server = app.listen(config.port, () => {
-    console.log(`[LCP Server] Running on http://localhost:${config.port}`);
+    console.log(`[LCP Server] Running on ${config.serverUrl} (listening on port ${config.port})`);
   });
 }
 
