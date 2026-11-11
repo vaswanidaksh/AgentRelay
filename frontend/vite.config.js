@@ -9,7 +9,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:4000',
+        target: process.env.VITE_BACKEND_URL || 'https://agentrelay-backend.onrender.com',
         changeOrigin: true,
       },
     },

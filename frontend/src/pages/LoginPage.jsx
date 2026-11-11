@@ -14,10 +14,12 @@ export default function LoginPage() {
   // ---------------------------------------------------------------------------
   // GitHub OAuth — redirects the browser to the backend which then goes to GitHub
   // ---------------------------------------------------------------------------
+  const backendUrl = (
+    import.meta.env.VITE_API_BASE_URL?.replace(/\/api\/v1\/?$/, '').replace(/\/api\/?$/, '') ||
+    'https://agentrelay-backend.onrender.com'
+  ).replace(/\/+$/, '');
+
   const handleGitHub = () => {
-    const backendUrl =
-      import.meta.env.VITE_API_BASE_URL?.replace('/api/v1', '').replace('/api', '') ||
-      'http://localhost:4000';
     window.location.href = `${backendUrl}/api/v1/auth/github/authorize`;
   };
 
@@ -129,7 +131,7 @@ export default function LoginPage() {
           </form>
 
           <p className="text-center text-[11px] text-white/20 pt-1">
-            Connected to LCP Backend (<span className="text-emerald-400 font-mono">http://localhost:4000</span>)
+            Connected to LCP Backend (<span className="text-emerald-400 font-mono">{backendUrl}</span>)
           </p>
         </div>
       </div>

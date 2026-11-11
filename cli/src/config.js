@@ -28,7 +28,7 @@ export function getDefaultConfig() {
     paused: false,
     modelRuntimeUrl: process.env.MODEL_RUNTIME_URL || 'http://localhost:11434',
     modelName: process.env.MODEL_NAME || 'qwen2.5-coder:7b',
-    serverUrl: process.env.SERVER_URL || 'http://localhost:4000',
+    serverUrl: process.env.SERVER_URL || 'https://agentrelay-backend.onrender.com',
     retentionDays: 14,
     updatedAt: new Date().toISOString(),
   };
@@ -49,7 +49,14 @@ export function loadConfig() {
 
   try {
     const raw = fs.readFileSync(filePath, 'utf-8');
-    return { ...getDefaultConfig(), ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    const merged = { ...getDefaultConfig(), ...parsed };
+    if (process.env.SERVER_URL) {
+      merged.serverUrl = process.env.SERVER_URL;
+    } else if (merged.serverUrl === 'http://localhost:4000') {
+      merged.serverUrl = 'https://agentrelay-backend.onrender.com';
+    }
+    return merged;
   } catch {
     return getDefaultConfig();
   }
