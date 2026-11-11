@@ -83,10 +83,11 @@ export function createProgram() {
     .action(unshareCommand);
 
   program
-    .command('login')
+    .command('login [handle]')
     .description('Authenticate with the AgentRelay team server')
-    .option('--token <token>', 'GitHub / API access token')
-    .action((options) => loginCommand(options));
+    .option('--token <token>', 'GitHub / API access token or GitHub handle')
+    .option('--handle <handle>', 'Your GitHub username (e.g. @vaswanidaksh)')
+    .action((handle, options) => loginCommand({ ...options, handle: handle || options.handle }));
 
   program
     .command('logout')
