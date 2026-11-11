@@ -9,11 +9,12 @@
 
 import Database from 'better-sqlite3';          // 1️⃣ SQLite driver
 import path from 'path';                        // 2️⃣ File-path utilities
-import { fileURLToPath } from 'url';            // 3️⃣ ESM __dirname polyfill
+import fs from 'fs';                            // 3️⃣ File-system utilities
+import { fileURLToPath } from 'url';            // 4️⃣ ESM __dirname polyfill
 
 // ── Recreate __dirname (not available natively in ES Modules) ────────────
-const __filename = fileURLToPath(import.meta.url);   // 4️⃣
-const __dirname  = path.dirname(__filename);         // 5️⃣
+const __filename = fileURLToPath(import.meta.url);   // 5️⃣
+const __dirname  = path.dirname(__filename);         // 6️⃣
 
 // ── Resolve the database file path ──────────────────────────────────────
 const DB_PATH = process.env.DB_PATH
@@ -30,6 +31,15 @@ let db;                                           // 7️⃣
  */
 export function getDb() {                         // 8️⃣
   if (!db) {                                      // 9️⃣
+    try {
+      const dbDir = path.dirname(DB_PATH);
+      if (!fs.existsSync(dbDir)) {
+        fs.mkdirSync(dbDir, { recursive: true });
+      }
+    } catch (err) {
+      console.warn(`[DB] Directory check warning: ${err.message}`);
+    }
+
     db = new Database(DB_PATH);                   // 10️⃣
 
     // Enable WAL mode for better concurrent read performance
