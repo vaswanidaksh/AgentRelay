@@ -39,7 +39,7 @@ router.get('/auth/github/authorize', (req, res) => {
 
   const params = new URLSearchParams({
     client_id: config.githubClientId,
-    redirect_uri: `http://localhost:${config.port}/api/v1/auth/github/callback`,
+    redirect_uri: `${config.serverUrl}/api/v1/auth/github/callback`,
     scope: 'read:user user:email',
     state,
   });
@@ -80,7 +80,7 @@ router.get('/auth/github/callback', async (req, res, next) => {
         client_id: config.githubClientId,
         client_secret: config.githubClientSecret,
         code,
-        redirect_uri: `http://localhost:${config.port}/api/v1/auth/github/callback`,
+        redirect_uri: `${config.serverUrl}/api/v1/auth/github/callback`,
       }),
     });
     const tokenData = await tokenRes.json();
