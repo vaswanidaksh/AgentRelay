@@ -50,9 +50,15 @@ export default function Footer() {
               <ul className="space-y-2.5">
                 {links.map((l) => (
                   <li key={l}>
-                    <a href="#" className="text-xs text-white/30 hover:text-white/60 transition-colors duration-150">
-                      {l}
-                    </a>
+                    {l === 'Install Guide' || l === 'CLI Reference' ? (
+                      <Link to="/docs" className="text-xs text-white/30 hover:text-white/60 transition-colors duration-150">
+                        {l}
+                      </Link>
+                    ) : (
+                      <a href="#" className="text-xs text-white/30 hover:text-white/60 transition-colors duration-150">
+                        {l}
+                      </a>
+                    )}
                   </li>
                 ))}
               </ul>
