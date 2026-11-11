@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>AgentRelay — CLI & Systems Command Reference</title>
+<style>
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; line-height: 1.5; color: #1e293b; max-width: 960px; margin: 40px auto; padding: 0 20px; background: #ffffff; }
+  h1 { font-size: 26px; color: #0f172a; margin-bottom: 6px; border-bottom: 2px solid #e2e8f0; padding-bottom: 12px; }
+  .subtitle { font-size: 14px; color: #64748b; margin-top: 0; margin-bottom: 24px; }
+  .meta-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 14px; border-radius: 8px; margin-bottom: 24px; font-size: 13px; }
+  h2 { font-size: 18px; color: #1e293b; margin-top: 32px; margin-bottom: 12px; border-left: 4px solid #4f46e5; padding-left: 10px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 24px; font-size: 13px; }
+  th, td { text-align: left; padding: 10px 12px; border: 1px solid #e2e8f0; vertical-align: top; }
+  th { background: #1e293b; color: #ffffff; font-weight: 600; }
+  tr:nth-child(even) { background: #f8fafc; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; background: #f1f5f9; color: #0f172a; padding: 2px 5px; border-radius: 4px; font-size: 12px; }
+  .cmd-name { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-weight: bold; color: #4338ca; }
+  .badge-sudo { background: #fee2e2; color: #b91c1c; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+  .badge-rec { background: #dcfce7; color: #15803d; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+  pre { background: #0f172a; color: #f8fafc; padding: 14px; border-radius: 8px; overflow-x: auto; font-size: 12px; }
+  .print-btn { background: #4f46e5; color: white; border: none; padding: 8px 16px; border-radius: 6px; font-weight: bold; cursor: pointer; float: right; margin-top: -50px; }
+  .print-btn:hover { background: #4338ca; }
+  @media print { .print-btn { display: none; } }
+</style>
+</head>
+<body>
+<button class="print-btn" onclick="window.print()">🖨️ Print / Save as PDF</button>
+<h1>AgentRelay — CLI & Systems Command Reference</h1>
+<p class="subtitle">Complete developer reference covering installation, scope management, daemons, MCP agent interop, team collaboration, sudo / zsh permission workarounds, and full lifecycle management.</p>
+
+<div class="meta-grid">
+  <div><b>Target OS:</b> macOS (zsh) / Linux</div>
+  <div><b>Version:</b> 1.0.0 (Polaris PRD v0.1)</div>
+  <div><b>Authors:</b> Utkarsh Sahoo & Daksh Vaswani</div>
+  <div><b>Store:</b> SQLite + FTS5 (~/.agentrelay)</div>
+  <div><b>Local Model:</b> Ollama (qwen2.5-coder:7b)</div>
+  <div><b>Cloud:</b> LCP Express REST Server (/api/v1)</div>
+</div>
+
+<h2>1. Installation & Global Setup (Including Sudo & Zsh Workarounds)</h2>
+<table>
+  <tr><th style="width:30%">Method / Scenario</th><th>Command & Functionality</th></tr>
+  <tr>
+    <td class="cmd-name">Standard Dependencies</td>
+    <td><code>npm install --prefix cli<br/>npm install --prefix backend<br/>npm install --prefix frontend</code><br/>Installs all third-party dependencies across the workspace.</td>
+  </tr>
+  <tr>
+    <td class="cmd-name">Standard Global Link</td>
+    <td><code>cd ~/Desktop/DESKTOP/AgentRelay/cli && npm link && cd ..</code><br/>Symlinks the binary into system PATH (run inside project directory).</td>
+  </tr>
+  <tr>
+    <td class="cmd-name">Global Install via Path</td>
+    <td><code>npm install -g ~/Desktop/DESKTOP/AgentRelay/cli</code><br/>Directly installs the CLI globally from any working directory.</td>
+  </tr>
+  <tr>
+    <td class="cmd-name"><span class="badge-sudo">SUDO</span> EACCES Fix A</td>
+    <td><code>sudo npm install -g ~/Desktop/DESKTOP/AgentRelay/cli</code><br/>Overcomes macOS permission locks on <code>/usr/local/lib/node_modules</code>. Prompts for Mac password once.</td>
+  </tr>
+  <tr>
+    <td class="cmd-name"><span class="badge-rec">RECOMMENDED</span> EACCES Fix B (Zsh)</td>
+    <td><code>echo 'alias agentrelay="node ~/Desktop/DESKTOP/AgentRelay/cli/bin/agentrelay.js"' >> ~/.zshrc && source ~/.zshrc</code><br/>Zero sudo or root permissions needed. Permanent shell alias available in every terminal.</td>
+  </tr>
+  <tr>
+    <td class="cmd-name">EACCES Fix C (Chown)</td>
+    <td><code>sudo chown -R utkarshsahoo /usr/local/lib/node_modules /usr/local/bin</code><br/>Restores write ownership to your user account so global npm commands never require sudo again.</td>
+  </tr>
+  <tr>
+    <td class="cmd-name">Verification</td>
+    <td><code>agentrelay --version</code> &nbsp;(Outputs: <code>1.0.0</code>)<br/><code>agentrelay --help</code> &nbsp;(Displays master command index)</td>
+  </tr>
+</table>
+
+<h2>2. Initialization & Opt-In Scope Management</h2>
+<table>
+  <tr><th style="width:30%">Command</th><th>Functionality</th></tr>
+  <tr><td class="cmd-name">agentrelay init</td><td>Initializes <code>~/.agentrelay/</code>, creates SQLite store with WAL mode & FTS5 search index, tests local Ollama runtime, and pulls team context if authenticated.</td></tr>
+  <tr><td class="cmd-name">agentrelay status</td><td>Shows background watcher state, registered scopes, indexed sessions, scrubbed events count, queue depth, and model status.</td></tr>
+  <tr><td class="cmd-name">agentrelay scope add &lt;path&gt;</td><td>Registers a directory for session capture. (Strict opt-in: unscoped directories are never opened).</td></tr>
+  <tr><td class="cmd-name">agentrelay scope list</td><td>Lists all folders currently observed for session capture.</td></tr>
+  <tr><td class="cmd-name">agentrelay scope remove &lt;path&gt;</td><td>Immediately halts session capture for a specific folder.</td></tr>
+  <tr><td class="cmd-name">agentrelay pause</td><td>Temporarily pauses all transcript capture across all scopes (zero capture mode).</td></tr>
+  <tr><td class="cmd-name">agentrelay resume</td><td>Resumes transcript observation across all registered scopes.</td></tr>
+</table>
+
+<h2>3. Daemon, Background Execution & Distillation</h2>
+<table>
+  <tr><th style="width:30%">Command / Mode</th><th>Functionality</th></tr>
+  <tr><td class="cmd-name">agentrelay daemon</td><td>Runs watcher, normalizer, deterministic secret scrubber, and distillation queue processor in the foreground.</td></tr>
+  <tr><td class="cmd-name">Zsh Background Daemon</td><td><code>nohup agentrelay daemon > ~/.agentrelay/daemon.log 2>&1 &</code><br/>Runs daemon persistently in background. Logs written to <code>~/.agentrelay/daemon.log</code>.</td></tr>
+  <tr><td class="cmd-name">Check Daemon Process</td><td><code>ps aux | grep "agentrelay daemon"</code></td></tr>
+  <tr><td class="cmd-name">Stop Background Daemon</td><td><code>kill </code></td></tr>
+  <tr><td class="cmd-name">agentrelay retry [sessionId]</td><td>Re-queues failed distillation jobs.</td></tr>
+</table>
+
+<h2>4. Review, Feedback, Search & Record Sharing</h2>
+<table>
+  <tr><th style="width:30%">Command</th><th>Functionality</th></tr>
+  <tr><td class="cmd-name">agentrelay review</td><td>Interactive review: accept, edit (new version), or reject candidate records.</td></tr>
+  <tr><td class="cmd-name">agentrelay review --accept</td><td>Batch-accepts all unreviewed candidate records into the verified store.</td></tr>
+  <tr><td class="cmd-name">agentrelay review --reject</td><td>Batch-rejects candidate records, removing them from search and promotion.</td></tr>
+  <tr><td class="cmd-name">agentrelay search [query]</td><td>High-speed offline search over sessions, decisions, and files using SQLite FTS5.</td></tr>
+  <tr><td class="cmd-name">agentrelay search [query] --json</td><td>Outputs matching records in structured JSON schema.</td></tr>
+  <tr><td class="cmd-name">agentrelay show &lt;recordId&gt;</td><td>Displays formatted record summary, decisions citing evidence IDs, and files touched.</td></tr>
+  <tr><td class="cmd-name">agentrelay show &lt;recordId&gt; --json</td><td>Outputs full record JSON including provenance and sensitivity metadata.</td></tr>
+  <tr><td class="cmd-name">agentrelay share &lt;recordId&gt;</td><td>Marks record as shareable with your team (private by default).</td></tr>
+  <tr><td class="cmd-name">agentrelay unshare &lt;recordId&gt;</td><td>Reverts record back to private status.</td></tr>
+</table>
+
+<h2>5. Global Context Sync, Markdown Packs & MCP Server</h2>
+<table>
+  <tr><th style="width:30%">Command</th><th>Functionality</th></tr>
+  <tr><td class="cmd-name">agentrelay sync</td><td><b>Master Synchronization:</b> Pulls team records, aggregates touched code files, writes markdown packs to <code>~/.agentrelay/context/record_*.md</code>, and generates <code>CONTEXT.md</code>.</td></tr>
+  <tr><td class="cmd-name">agentrelay export &lt;recordId&gt;</td><td>Exports a single record as a self-contained Markdown pack (<code>context_pack_*.md</code>).</td></tr>
+  <tr><td class="cmd-name">agentrelay export &lt;recordId&gt; --pack</td><td>Includes the full raw scrubbed session chat and tool event slice in the Markdown pack.</td></tr>
+  <tr><td class="cmd-name">agentrelay mcp</td><td><b>Model Context Protocol Server:</b> Stdio JSON-RPC server with <code>search_context</code> and <code>show_record</code> tools for Claude Code, Cursor, and Zed.</td></tr>
+</table>
+
+<h3>Claude Desktop / Cursor Configuration (<code>claude_desktop_config.json</code>):</h3>
+<pre>{
+  "mcpServers": {
+    "agentrelay": {
+      "command": "agentrelay",
+      "args": ["mcp"]
+    }
+  }
+}</pre>
+
+<h2>6. Team Collaboration, Handoffs & LCP Cloud</h2>
+<table>
+  <tr><th style="width:30%">Command</th><th>Functionality</th></tr>
+  <tr><td class="cmd-name">agentrelay login</td><td>GitHub OAuth device flow login. Stores token in <code>~/.agentrelay/auth.json</code> (0o600).</td></tr>
+  <tr><td class="cmd-name">agentrelay login --token &lt;tok&gt;</td><td>Direct API token authentication.</td></tr>
+  <tr><td class="cmd-name">agentrelay logout</td><td>Clears local credentials.</td></tr>
+  <tr><td class="cmd-name">agentrelay team create &lt;name&gt;</td><td>Creates a new isolated team workspace (sets creator as admin).</td></tr>
+  <tr><td class="cmd-name">agentrelay team list</td><td>Lists all team memberships and roles.</td></tr>
+  <tr><td class="cmd-name">agentrelay team invite</td><td>Generates an expiring single-use invite token.</td></tr>
+  <tr><td class="cmd-name">agentrelay team join &lt;token&gt;</td><td>Joins team using invite token.</td></tr>
+  <tr><td class="cmd-name">agentrelay promote &lt;recordId&gt;</td><td>Promotes record to team server. Server re-scrubs on ingest and appends to SHA-256 audit chain.</td></tr>
+  <tr><td class="cmd-name">agentrelay unpromote &lt;recordId&gt;</td><td>Withdraws record and creates tombstone that propagates on pull.</td></tr>
+  <tr><td class="cmd-name">agentrelay pull</td><td>Incremental pull of team records and tombstones using monotonic sequence cursor.</td></tr>
+  <tr><td class="cmd-name">agentrelay handoff &lt;recId&gt; &lt;@user&gt;</td><td>Assigns a record directly to a teammate with notification provenance.</td></tr>
+  <tr><td class="cmd-name">agentrelay inbox</td><td>Views and manages received handoffs (<code>--state pending|read</code>, <code>--read &lt;id&gt;</code>).</td></tr>
+</table>
+
+<h2>7. Backend Server & Frontend Dashboard</h2>
+<table>
+  <tr><th style="width:30%">Target</th><th>Command & Purpose</th></tr>
+  <tr><td class="cmd-name">Backend Dev</td><td><code>npm run dev --prefix backend</code> (Runs Express LCP REST server on port 4000)</td></tr>
+  <tr><td class="cmd-name">Backend Prod</td><td><code>npm run start --prefix backend</code> (Runs backend in production mode)</td></tr>
+  <tr><td class="cmd-name">Backend Seed</td><td><code>npm run seed --prefix backend</code> (Seeds mock teams, users, and records into lcp.db)</td></tr>
+  <tr><td class="cmd-name">Frontend Dev</td><td><code>npm run dev --prefix frontend</code> (Runs Vite HMR dashboard on port 5173)</td></tr>
+  <tr><td class="cmd-name">Frontend Build</td><td><code>npm run build --prefix frontend</code> (Compiles production bundle into frontend/dist/)</td></tr>
+</table>
+
+<h2>8. Automated Testing & Verification</h2>
+<table>
+  <tr><th style="width:30%">Test Suite</th><th>Command & Coverage</th></tr>
+  <tr><td class="cmd-name">CLI Unit Suite</td><td><code>npm test --prefix cli</code> (9 tests: scrubber, normalizer, schema, sensitivity check, MCP server)</td></tr>
+  <tr><td class="cmd-name">Backend Security Suite</td><td><code>npm test --prefix backend</code> (41 tests: tenant isolation, RBAC, tombstones, SHA-256 audit chain)</td></tr>
+  <tr><td class="cmd-name">CLI E2E Smoke Pipeline</td><td><code>node cli/test/e2e-smoke.js</code> (15-step headless pipeline test)</td></tr>
+  <tr><td class="cmd-name">Scrubber Metric M-1</td><td><code>node eval/benchmark_scrubber.js</code> (100% recall on 24 planted secrets)</td></tr>
+  <tr><td class="cmd-name">All-in-One CI Command</td><td><code>npm test --prefix cli && npm test --prefix backend && node cli/test/e2e-smoke.js && node eval/benchmark_scrubber.js && npm run build --prefix frontend</code></td></tr>
+</table>
+
+<h2>9. Purge, Reset & Deletion / Uninstallation</h2>
+<table>
+  <tr><th style="width:30%">Target</th><th>Command & Deletion Scope</th></tr>
+  <tr><td class="cmd-name">agentrelay purge --events</td><td>Purges only raw scrubbed events table (keeps distilled records).</td></tr>
+  <tr><td class="cmd-name">agentrelay purge --all</td><td>Purges all local sessions, events, jobs, records, and offsets.</td></tr>
+  <tr><td class="cmd-name">Reset Server DB</td><td><code>rm -f backend/lcp.db backend/lcp.db-wal backend/lcp.db-shm</code></td></tr>
+  <tr><td class="cmd-name">Delete Local Client Store</td><td><code>rm -rf ~/.agentrelay</code></td></tr>
+  <tr><td class="cmd-name">Delete Repository Context</td><td><code>rm -rf .agentrelay/</code></td></tr>
+  <tr><td class="cmd-name">Global Uninstall (npm link)</td><td><code>cd ~/Desktop/DESKTOP/AgentRelay/cli && npm unlink -g agentrelay && cd ..</code></td></tr>
+  <tr><td class="cmd-name">Global Uninstall (npm -g)</td><td><code>npm uninstall -g agentrelay-cli</code></td></tr>
+  <tr><td class="cmd-name">Remove Zsh Alias</td><td><code>sed -i '' '/agentrelay/d' ~/.zshrc && source ~/.zshrc</code></td></tr>
+</table>
+
+</body>
+</html>

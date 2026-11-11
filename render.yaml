@@ -1,0 +1,56 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Render Blueprint Specification (render.yaml) for AgentRelay
+# Deploy Backend (LCP Team Server) and Frontend (Companion Dashboard)
+# ─────────────────────────────────────────────────────────────────────────────
+# Docs: https://render.com/docs/blueprint-spec
+
+services:
+  # ───────────────────────────────────────────────────────────────────────────
+  # 1. AgentRelay Backend (Express + SQLite LCP Team Server)
+  # ───────────────────────────────────────────────────────────────────────────
+  - type: web
+    name: agentrelay-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free # Free tier available. For production with persistent disk, change to starter
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 4000
+      - key: DB_PATH
+        value: /data/lcp.db
+      - key: TOKEN_PEPPER
+        generateValue: true
+      - key: CLIENT_ORIGIN
+        sync: false # Set to your deployed frontend URL: https://agentrelay-frontend.onrender.com
+      - key: SERVER_URL
+        sync: false # Set to your deployed backend URL: https://agentrelay-backend.onrender.com
+      - key: GITHUB_CLIENT_ID
+        sync: false # Optional: GitHub OAuth Client ID (leave blank if unused)
+      - key: GITHUB_CLIENT_SECRET
+        sync: false # Optional: GitHub OAuth Client Secret (leave blank if unused)
+    # Persistent SQLite Disk (Uncomment if upgrading to Render 'starter' plan):
+    # disk:
+    #   name: agentrelay-data
+    #   mountPath: /data
+    #   sizeGB: 1
+
+  # ───────────────────────────────────────────────────────────────────────────
+  # 2. AgentRelay Frontend (Vite + React 19 + Tailwind CSS)
+  # ───────────────────────────────────────────────────────────────────────────
+  - type: web
+    name: agentrelay-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        sync: false # Set to: https://agentrelay-backend.onrender.com/api/v1
