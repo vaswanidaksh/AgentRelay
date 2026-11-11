@@ -2,6 +2,9 @@ import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import TiltCard from '../components/TiltCard';
+import CliCommandsModal from '../components/CliCommandsModal';
+import JoinWorkspaceModal from '../components/JoinWorkspaceModal';
+import CreateTeamModal from '../components/CreateTeamModal';
 import {
   listTeams,
   listRecords,
@@ -24,6 +27,13 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [inviteToken, setInviteToken] = useState(null);
+
+  // New Modals State
+  const [showCliModal, setShowCliModal] = useState(false);
+  const [showJoinModal, setShowJoinModal] = useState(false);
+  const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
+  const [copiedRecordId, setCopiedRecordId] = useState(null);
+  const [copiedPromoteCmd, setCopiedPromoteCmd] = useState(null);
 
   const [search, setSearch] = useState('');
   const [person, setPerson] = useState('all');
@@ -191,6 +201,49 @@ export default function DashboardPage() {
     }
   };
 
+  const handleJoinSuccess = async (joinedTeam) => {
+    try {
+      const updatedTeams = await listTeams();
+      setTeams(updatedTeams);
+      if (joinedTeam) {
+        const match = updatedTeams.find((t) => t.id === joinedTeam.id);
+        setActiveTeam(match || joinedTeam);
+      } else if (updatedTeams.length > 0) {
+        setActiveTeam(updatedTeams[0]);
+      }
+    } catch (err) {
+      console.error('Failed to reload teams:', err);
+    }
+  };
+
+  const handleCreateTeamSuccess = async (newTeam) => {
+    try {
+      const updatedTeams = await listTeams();
+      setTeams(updatedTeams);
+      if (newTeam) {
+        const match = updatedTeams.find((t) => t.id === newTeam.id);
+        setActiveTeam(match || newTeam);
+      }
+    } catch (err) {
+      console.error('Failed to reload teams:', err);
+    }
+  };
+
+  const handleCopyRecordId = (e, recId) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(recId);
+    setCopiedRecordId(recId);
+    setTimeout(() => setCopiedRecordId(null), 2000);
+  };
+
+  const handleCopyPromoteCmd = (e, recId) => {
+    e.stopPropagation();
+    const cmd = `agentrelay promote ${recId} --team ${activeTeam?.id || '<teamId>'}`;
+    navigator.clipboard.writeText(cmd);
+    setCopiedPromoteCmd(recId);
+    setTimeout(() => setCopiedPromoteCmd(null), 2000);
+  };
+
   const filtered = records.filter((s) => {
     const q = search.toLowerCase();
     const matchQ = !q || s.title.toLowerCase().includes(q) || s.summary.toLowerCase().includes(q) || s.user.toLowerCase().includes(q);
@@ -214,42 +267,90 @@ export default function DashboardPage() {
           <div className="h-3.5 w-px bg-white/[0.08]" />
 
           {/* Team Dropdown */}
-          <select
-            value={activeTeam?.id || ''}
-            onChange={(e) => {
-              const selected = teams.find(t => t.id === e.target.value);
-              if (selected) setActiveTeam(selected);
-            }}
-            className="bg-[#111111] border border-white/[0.10] rounded-lg px-2.5 py-1 text-xs font-medium text-white/70 focus:outline-hidden cursor-pointer hover:border-white/25 transition-colors"
-          >
-            {teams.length === 0 ? (
-              <option value="">No teams found</option>
-            ) : (
-              teams.map(t => (
-                <option key={t.id} value={t.id} className="bg-[#1A1A1A]">
-                  {t.name}
-                </option>
-              ))
-            )}
-          </select>
-
-          {activeTeam && (
-            <button
-              onClick={handleCreateInvite}
-              className="text-[11px] font-mono px-2 py-1 rounded bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.10] text-white/60 transition-colors"
+          <div className="flex items-center gap-1.5">
+            <select
+              value={activeTeam?.id || ''}
+              onChange={(e) => {
+                const selected = teams.find(t => t.id === e.target.value);
+                if (selected) setActiveTeam(selected);
+              }}
+              className="bg-[#111111] border border-white/[0.10] rounded-lg px-2.5 py-1 text-xs font-medium text-white/70 focus:outline-hidden cursor-pointer hover:border-white/25 transition-colors max-w-[160px] truncate"
             >
-              + Invite Token
+              {teams.length === 0 ? (
+                <option value="">No teams found</option>
+              ) : (
+                teams.map(t => (
+                  <option key={t.id} value={t.id} className="bg-[#1A1A1A]">
+                    {t.name}
+                  </option>
+                ))
+              )}
+            </select>
+
+            {/* Join Team Button */}
+            <button
+              onClick={() => setShowJoinModal(true)}
+              className="text-[11px] font-mono px-2 py-1 rounded-md bg-cyan-500/10 border border-cyan-500/25 hover:bg-cyan-500/20 text-cyan-300 transition-colors flex items-center gap-1 cursor-pointer"
+              title="Join a team workspace using an invite token"
+            >
+              <span>🔗</span>
+              <span className="hidden sm:inline">Join Team</span>
             </button>
-          )}
+
+            {/* Create Team Button */}
+            <button
+              onClick={() => setShowCreateTeamModal(true)}
+              className="text-[11px] font-mono px-2 py-1 rounded-md bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.10] text-white/70 transition-colors flex items-center gap-1 cursor-pointer"
+              title="Create a new isolated team workspace"
+            >
+              <span>+</span>
+              <span className="hidden sm:inline">New Team</span>
+            </button>
+
+            {activeTeam && (
+              <button
+                onClick={handleCreateInvite}
+                className="text-[11px] font-mono px-2 py-1 rounded-md bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-400 transition-colors flex items-center gap-1 cursor-pointer"
+                title="Generate invite token for teammate"
+              >
+                <span>✉️</span>
+                <span className="hidden md:inline">Invite Token</span>
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* CLI Commands Reference Panel Button */}
+          <button
+            onClick={() => setShowCliModal(true)}
+            className="flex items-center gap-1.5 text-xs font-mono font-semibold px-2.5 py-1.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 transition-colors cursor-pointer"
+            title="Open CLI Commands Reference & Terminal Cheat Sheet"
+          >
+            <span>⚡</span>
+            <span className="hidden sm:inline">Commands</span>
+          </button>
+
+          {/* Full Documentation Link */}
+          <Link
+            to="/docs"
+            target="_blank"
+            rel="noreferrer"
+            className="flex items-center gap-1 text-xs font-mono px-2.5 py-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.10] text-white/80 transition-colors cursor-pointer"
+            title="Open Full AgentRelay Documentation"
+          >
+            <span>📖</span>
+            <span className="hidden sm:inline">Docs</span>
+            <span className="text-[10px] text-white/40">↗</span>
+          </Link>
+
           {/* Inbox Button */}
           <button
             onClick={() => { setShowInboxModal(true); fetchInbox(); }}
-            className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.10] text-white/80 transition-colors relative cursor-pointer"
+            className="flex items-center gap-1.5 text-xs font-mono px-2.5 py-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.10] text-white/80 transition-colors relative cursor-pointer"
           >
-            <span>📥 Inbox</span>
+            <span>📥</span>
+            <span className="hidden sm:inline">Inbox</span>
             {pendingInboxCount > 0 && (
               <span className="px-1.5 py-0.2 rounded-full bg-cyan-400 text-black text-[10px] font-bold">
                 {pendingInboxCount}
@@ -260,19 +361,20 @@ export default function DashboardPage() {
           {/* Audit Trail Button */}
           <button
             onClick={handleOpenAudit}
-            className="flex items-center gap-1.5 text-xs font-mono px-3 py-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.10] text-white/80 transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 text-xs font-mono px-2.5 py-1.5 rounded-lg bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.10] text-white/80 transition-colors cursor-pointer"
           >
-            <span>🛡️ Audit Trail</span>
+            <span>🛡️</span>
+            <span className="hidden md:inline">Audit Trail</span>
           </button>
 
-          <div className="flex items-center gap-1.5 text-[11px] font-mono text-white/50 pl-2 border-l border-white/[0.06]">
+          <div className="hidden lg:flex items-center gap-1.5 text-[11px] font-mono text-white/50 pl-2 border-l border-white/[0.06]">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            LCP Server (Port 4000)
+            LCP Cloud Server
           </div>
 
           <button
             onClick={logout}
-            className="text-[12px] text-white/40 hover:text-white/70 transition-colors cursor-pointer"
+            className="text-[12px] text-white/40 hover:text-white/70 transition-colors cursor-pointer pl-1"
           >
             Sign out
           </button>
@@ -299,6 +401,49 @@ export default function DashboardPage() {
       <div className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-7 flex gap-5">
         {/* Sidebar */}
         <aside className="w-56 shrink-0 hidden md:flex flex-col gap-4">
+          {/* Workspaces Management */}
+          <div className="rounded-xl border border-white/[0.06] bg-[#111111] p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30">
+                Workspaces ({teams.length})
+              </p>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setShowJoinModal(true)}
+                  className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 transition-colors cursor-pointer"
+                  title="Join workspace with invite token"
+                >
+                  Join
+                </button>
+                <button
+                  onClick={() => setShowCreateTeamModal(true)}
+                  className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.05] text-white/70 hover:bg-white/[0.1] transition-colors cursor-pointer"
+                  title="Create new workspace"
+                >
+                  + New
+                </button>
+              </div>
+            </div>
+            <div className="space-y-1">
+              {teams.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => setActiveTeam(t)}
+                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-all flex items-center justify-between ${
+                    activeTeam?.id === t.id
+                      ? 'bg-white/[0.08] text-white font-medium'
+                      : 'text-white/40 hover:bg-white/[0.04] hover:text-white/70'
+                  }`}
+                >
+                  <span className="truncate">{t.name}</span>
+                  {activeTeam?.id === t.id && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Members */}
           <div className="rounded-xl border border-white/[0.06] bg-[#111111] p-4">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3">
@@ -357,6 +502,20 @@ export default function DashboardPage() {
               ))}
             </div>
           </div>
+
+          {/* CLI Reference Widget */}
+          <div className="rounded-xl border border-white/[0.06] bg-[#111111] p-4 space-y-2">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30">
+              Terminal Help
+            </p>
+            <button
+              onClick={() => setShowCliModal(true)}
+              className="w-full py-2 px-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-400 text-xs font-mono font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <span>⚡</span>
+              <span>CLI Cheat Sheet</span>
+            </button>
+          </div>
         </aside>
 
         {/* Main feed */}
@@ -380,21 +539,78 @@ export default function DashboardPage() {
             />
           </div>
 
+          {/* Quick Promote / Workspace helper banner */}
+          <div className="p-3.5 rounded-xl border border-white/[0.08] bg-[#111111] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
+            <div className="flex items-center gap-2">
+              <span className="text-emerald-400 font-bold">⚡</span>
+              <span className="text-white/70 font-sans">
+                Promote local record to <strong className="text-white font-mono">{activeTeam?.name || 'this team'}</strong>:
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <code className="text-[11px] text-emerald-400 bg-black/60 px-2.5 py-1 rounded-md border border-white/[0.06] select-all truncate">
+                agentrelay promote &lt;recordId&gt; --team {activeTeam?.id || '&lt;teamId&gt;'}
+              </code>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(`agentrelay promote <recordId> --team ${activeTeam?.id || '<teamId>'}`);
+                  setCopiedPromoteCmd('global');
+                  setTimeout(() => setCopiedPromoteCmd(null), 2000);
+                }}
+                className="px-2 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] text-white/70 text-[10px] shrink-0 cursor-pointer"
+              >
+                {copiedPromoteCmd === 'global' ? '✓ Copied' : 'Copy'}
+              </button>
+            </div>
+          </div>
+
           {/* Cards or Empty State */}
           {loading ? (
             <div className="flex-1 flex flex-col items-center justify-center py-20 text-center">
               <p className="text-xs text-white/40 animate-pulse">Loading context records from LCP server...</p>
             </div>
           ) : filtered.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center py-20 text-center border border-dashed border-white/[0.08] rounded-2xl bg-[#0E0E0E]">
-              <p className="text-2xl mb-2 opacity-40">📁</p>
-              <p className="text-sm font-medium text-white/70">No context records found in this team</p>
-              <p className="text-xs text-white/30 mt-1 max-w-sm">
-                Promote a local record from your terminal using:
-              </p>
-              <code className="mt-2 text-xs font-mono bg-black/60 px-3 py-1.5 rounded-lg border border-white/[0.08] text-emerald-400">
-                agentrelay promote &lt;recordId&gt; --team {activeTeam?.id || 't_id'}
-              </code>
+            <div className="flex-1 flex flex-col items-center justify-center py-16 px-6 text-center border border-dashed border-white/[0.08] rounded-2xl bg-[#0E0E0E] space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center text-2xl mx-auto">
+                📁
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-white/90">No context records in this workspace yet</h3>
+                <p className="text-xs text-white/40 mt-1 max-w-md mx-auto">
+                  Add code context from your terminal, or join another team workspace using an invite token.
+                </p>
+              </div>
+
+              <div className="w-full max-w-lg p-3 rounded-xl bg-black/60 border border-white/[0.08] font-mono text-xs text-left space-y-1 text-emerald-400">
+                <div className="text-white/40 text-[10px]"># 1. Scope project & capture session</div>
+                <div>agentrelay scope add ~/your-repo</div>
+                <div className="text-white/40 text-[10px] pt-1"># 2. Promote record into this team workspace</div>
+                <div>agentrelay promote &lt;recordId&gt; --team {activeTeam?.id || '&lt;teamId&gt;'}</div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
+                <button
+                  onClick={() => setShowJoinModal(true)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/20 transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>🔗</span>
+                  <span>Join Team with Token</span>
+                </button>
+                <button
+                  onClick={() => setShowCreateTeamModal(true)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-white/[0.06] border border-white/[0.1] text-white hover:bg-white/[0.12] transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>+</span>
+                  <span>Create New Team</span>
+                </button>
+                <button
+                  onClick={() => setShowCliModal(true)}
+                  className="px-3.5 py-2 rounded-xl text-xs font-mono bg-white text-black hover:bg-white/90 transition-colors flex items-center gap-1.5 cursor-pointer font-bold"
+                >
+                  <span>⚡</span>
+                  <span>CLI Commands Reference</span>
+                </button>
+              </div>
             </div>
           ) : (
             <div className="space-y-3">
@@ -431,6 +647,30 @@ export default function DashboardPage() {
                     <p className="text-xs text-white/50 line-clamp-2 leading-relaxed mb-3">
                       {s.summary}
                     </p>
+
+                    {/* Record ID & Terminal promote actions */}
+                    <div className="my-2.5 p-2 rounded-lg bg-black/50 border border-white/[0.06] flex items-center justify-between text-xs font-mono">
+                      <div className="flex items-center gap-2 truncate">
+                        <span className="text-white/30 text-[10px] uppercase tracking-wider shrink-0">Record ID:</span>
+                        <code className="text-cyan-300 font-semibold select-all text-[11px] truncate max-w-[200px] sm:max-w-none">{s.id}</code>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={(e) => handleCopyRecordId(e, s.id)}
+                          className="px-2 py-0.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-white/70 hover:text-white text-[10px] transition-colors cursor-pointer"
+                          title="Copy Record ID"
+                        >
+                          {copiedRecordId === s.id ? '✓ ID Copied' : 'Copy ID'}
+                        </button>
+                        <button
+                          onClick={(e) => handleCopyPromoteCmd(e, s.id)}
+                          className="px-2 py-0.5 rounded bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[10px] border border-emerald-500/20 transition-colors cursor-pointer"
+                          title="Copy promote command for terminal"
+                        >
+                          {copiedPromoteCmd === s.id ? '✓ Cmd Copied' : 'Copy Promote Cmd'}
+                        </button>
+                      </div>
+                    </div>
 
                     <div className="flex items-center gap-3 text-[11px] font-mono text-white/30 pt-2 border-t border-white/[0.04]">
                       <span>📁 {s.filesCount} file(s) touched</span>
@@ -682,6 +922,27 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* CLI Commands Reference Modal */}
+      <CliCommandsModal
+        isOpen={showCliModal}
+        onClose={() => setShowCliModal(false)}
+        activeTeamId={activeTeam?.id}
+      />
+
+      {/* Join Workspace Modal */}
+      <JoinWorkspaceModal
+        isOpen={showJoinModal}
+        onClose={() => setShowJoinModal(false)}
+        onJoined={handleJoinSuccess}
+      />
+
+      {/* Create Team Modal */}
+      <CreateTeamModal
+        isOpen={showCreateTeamModal}
+        onClose={() => setShowCreateTeamModal(false)}
+        onCreated={handleCreateTeamSuccess}
+      />
     </div>
   );
 }
