@@ -36,9 +36,13 @@ export async function promoteCommand(recordId, options) {
     const teamsRes = await fetch(`${config.serverUrl}/api/v1/teams`, {
       headers: { 'Authorization': `Bearer ${auth.token}` }
     });
-    const teamsData = await teamsRes.json();
+    const teamsData = await teamsRes.json().catch(() => ({}));
+    if (teamsRes.status === 401) {
+      console.error('Error: Session expired or invalid token (401). Please run "agentrelay login" to refresh your credentials.');
+      process.exit(1);
+    }
     if (!teamsRes.ok || !teamsData.teams || teamsData.teams.length === 0) {
-      console.error('Error: You are not in any team. Create or join a team first via "agentrelay team create <name>".');
+      console.error(teamsData.error?.message || 'Error: You are not in any team. Create or join a team first via "agentrelay team create <name>".');
       process.exit(1);
     }
     record.visibility.teamId = teamsData.teams[0].id;
