@@ -12,16 +12,36 @@ export async function pushCommand(recordId, options = {}) {
   }
 
   if (recordId) {
+    const row = db.prepare('SELECT record_id, version, json FROM records WHERE record_id = ? ORDER BY version DESC LIMIT 1').get(recordId);
+    if (row) {
+      try {
+        const parsed = JSON.parse(row.json);
+        if (!parsed.visibility?.shareable) {
+          parsed.visibility = parsed.visibility || {};
+          parsed.visibility.shareable = true;
+          db.prepare('UPDATE records SET shareable = 1, json = ? WHERE record_id = ? AND version = ?')
+            .run(JSON.stringify(parsed), parsed.recordId, parsed.version);
+        }
+      } catch {
+        // ignore
+      }
+    }
     return promoteCommand(recordId, options);
   }
 
-  // Find all local accepted shareable records
-  const rows = db.prepare('SELECT record_id, version, json FROM records WHERE withdrawn_at IS NULL ORDER BY created_at DESC').all();
+  // Find all local records that are not rejected
+  const rows = db.prepare('SELECT record_id, version, json FROM records ORDER BY created_at DESC').all();
   const candidates = [];
   for (const r of rows) {
     try {
       const parsed = JSON.parse(r.json);
-      if (parsed.visibility?.shareable && parsed.feedback?.status !== 'rejected') {
+      if (parsed.feedback?.status !== 'rejected') {
+        if (!parsed.visibility?.shareable) {
+          parsed.visibility = parsed.visibility || {};
+          parsed.visibility.shareable = true;
+          db.prepare('UPDATE records SET shareable = 1, json = ? WHERE record_id = ? AND version = ?')
+            .run(JSON.stringify(parsed), parsed.recordId, parsed.version);
+        }
         candidates.push(parsed);
       }
     } catch {
