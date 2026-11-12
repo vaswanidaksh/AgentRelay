@@ -24,8 +24,24 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
 
+      - name: Repair apt sources for the GitHub runner image
+        shell: bash
+        run: |
+          set -euxo pipefail
+          sudo rm -f /etc/apt/apt-mirrors.txt
+          sudo find /etc/apt/sources.list.d -maxdepth 1 -type f -delete
+          . /etc/os-release
+          cat <<EOF | sudo tee /etc/apt/sources.list.d/ubuntu.sources
+          Types: deb
+          URIs: http://archive.ubuntu.com/ubuntu/
+          Suites: ${VERSION_CODENAME} ${VERSION_CODENAME}-updates ${VERSION_CODENAME}-security ${VERSION_CODENAME}-backports
+          Components: main restricted universe multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          EOF
+          sudo apt-get update --fix-missing
+
       - name: Ensure build tools are installed
-        run: sudo apt-get update && sudo apt-get install -y build-essential python3 make g++
+        run: sudo apt-get install -y build-essential python3 make g++
 
       - name: Install Backend dependencies
         run: |
