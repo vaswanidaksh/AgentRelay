@@ -11,7 +11,8 @@ import {
   findInviteByToken,
   acceptInvite,
   listMembers,
-  removeMember
+  removeMember,
+  deleteTeam
 } from '../db/queries/teams.js';
 import { ValidationError, NotFoundError, ConflictError } from '../core/errors.js';
 import { logAuditEvent } from '../db/queries/audit.js';
@@ -173,6 +174,30 @@ router.delete('/teams/:id/members/:userId', requireAuth, requireTeamMember, requ
     });
 
     res.json({ message: 'Member removed successfully.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Deletes a team workspace (admin only).
+ */
+router.delete('/teams/:id', requireAuth, requireTeamMember, requireTeamAdmin, (req, res, next) => {
+  try {
+    deleteTeam(req.teamId);
+    res.json({ message: 'Team workspace deleted successfully.', teamId: req.teamId });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Leaves a team workspace (non-creator or any member).
+ */
+router.post('/teams/:id/leave', requireAuth, requireTeamMember, (req, res, next) => {
+  try {
+    removeMember(req.teamId, req.user.id);
+    res.json({ message: 'Left team successfully.', teamId: req.teamId });
   } catch (err) {
     next(err);
   }

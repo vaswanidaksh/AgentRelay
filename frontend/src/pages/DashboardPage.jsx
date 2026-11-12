@@ -10,6 +10,7 @@ import {
   listRecords,
   listMembers,
   createInvite,
+  deleteTeam,
   listInbox,
   markInboxRead,
   listAuditTrail,
@@ -120,7 +121,14 @@ export default function DashboardPage() {
         if (!isMounted) return;
         setTeams(teamList);
         if (teamList.length > 0) {
-          setActiveTeam(teamList[0]);
+          const savedTeamId = localStorage.getItem('ar_active_team_id');
+          const matched = teamList.find((t) => t.id === savedTeamId);
+          const chosen = matched || teamList[0];
+          setActiveTeam(chosen);
+          localStorage.setItem('ar_active_team_id', chosen.id);
+        } else {
+          setActiveTeam(null);
+          localStorage.removeItem('ar_active_team_id');
         }
       } catch (err) {
         if (!isMounted) return;
@@ -207,9 +215,12 @@ export default function DashboardPage() {
       setTeams(updatedTeams);
       if (joinedTeam) {
         const match = updatedTeams.find((t) => t.id === joinedTeam.id);
-        setActiveTeam(match || joinedTeam);
+        const target = match || joinedTeam;
+        setActiveTeam(target);
+        localStorage.setItem('ar_active_team_id', target.id);
       } else if (updatedTeams.length > 0) {
         setActiveTeam(updatedTeams[0]);
+        localStorage.setItem('ar_active_team_id', updatedTeams[0].id);
       }
     } catch (err) {
       console.error('Failed to reload teams:', err);
@@ -222,10 +233,43 @@ export default function DashboardPage() {
       setTeams(updatedTeams);
       if (newTeam) {
         const match = updatedTeams.find((t) => t.id === newTeam.id);
-        setActiveTeam(match || newTeam);
+        const target = match || newTeam;
+        setActiveTeam(target);
+        localStorage.setItem('ar_active_team_id', target.id);
       }
     } catch (err) {
       console.error('Failed to reload teams:', err);
+    }
+  };
+
+  const handleDeleteTeam = async (teamToDelete) => {
+    const targetTeam = teamToDelete || activeTeam;
+    if (!targetTeam) return;
+
+    const confirmMsg = `Are you sure you want to permanently delete workspace "${targetTeam.name}" (${targetTeam.id})?\n\nAll records, invites, and members in this workspace will be permanently deleted.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      await deleteTeam(targetTeam.id);
+      const updatedTeams = teams.filter((t) => t.id !== targetTeam.id);
+      setTeams(updatedTeams);
+
+      if (activeTeam?.id === targetTeam.id) {
+        if (updatedTeams.length > 0) {
+          setActiveTeam(updatedTeams[0]);
+          localStorage.setItem('ar_active_team_id', updatedTeams[0].id);
+        } else {
+          setActiveTeam(null);
+          localStorage.removeItem('ar_active_team_id');
+          setRecords([]);
+          setMembers([]);
+        }
+      }
+    } catch (err) {
+      alert(
+        'Failed to delete workspace: ' +
+          (err.response?.data?.error?.message || err.message || 'Access denied or server error')
+      );
     }
   };
 
@@ -272,7 +316,10 @@ export default function DashboardPage() {
               value={activeTeam?.id || ''}
               onChange={(e) => {
                 const selected = teams.find(t => t.id === e.target.value);
-                if (selected) setActiveTeam(selected);
+                if (selected) {
+                  setActiveTeam(selected);
+                  localStorage.setItem('ar_active_team_id', selected.id);
+                }
               }}
               className="bg-[#111111] border border-white/[0.10] rounded-lg px-2.5 py-1 text-xs font-medium text-white/70 focus:outline-hidden cursor-pointer hover:border-white/25 transition-colors max-w-[160px] truncate"
             >
@@ -315,6 +362,17 @@ export default function DashboardPage() {
               >
                 <span>✉️</span>
                 <span className="hidden md:inline">Invite Token</span>
+              </button>
+            )}
+
+            {activeTeam && (
+              <button
+                onClick={() => handleDeleteTeam(activeTeam)}
+                className="text-[11px] font-mono px-2 py-1 rounded-md bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 text-rose-400 transition-colors flex items-center gap-1 cursor-pointer"
+                title={`Delete workspace "${activeTeam.name}"`}
+              >
+                <span>🗑️</span>
+                <span className="hidden lg:inline">Delete Workspace</span>
               </button>
             )}
           </div>
@@ -426,20 +484,37 @@ export default function DashboardPage() {
             </div>
             <div className="space-y-1">
               {teams.map((t) => (
-                <button
+                <div
                   key={t.id}
-                  onClick={() => setActiveTeam(t)}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-all flex items-center justify-between ${
+                  className={`group/ws flex items-center justify-between rounded-lg px-2.5 py-1.5 transition-all ${
                     activeTeam?.id === t.id
                       ? 'bg-white/[0.08] text-white font-medium'
                       : 'text-white/40 hover:bg-white/[0.04] hover:text-white/70'
                   }`}
                 >
-                  <span className="truncate">{t.name}</span>
-                  {activeTeam?.id === t.id && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />
-                  )}
-                </button>
+                  <button
+                    onClick={() => {
+                      setActiveTeam(t);
+                      localStorage.setItem('ar_active_team_id', t.id);
+                    }}
+                    className="flex-1 text-left text-xs truncate flex items-center justify-between cursor-pointer mr-1"
+                  >
+                    <span className="truncate">{t.name}</span>
+                    {activeTeam?.id === t.id && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 ml-1" />
+                    )}
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteTeam(t);
+                    }}
+                    className="opacity-0 group-hover/ws:opacity-100 text-white/30 hover:text-rose-400 hover:bg-rose-500/10 px-1 py-0.5 rounded text-[11px] transition-all cursor-pointer"
+                    title={`Delete workspace "${t.name}"`}
+                  >
+                    ✕
+                  </button>
+                </div>
               ))}
             </div>
           </div>
@@ -521,22 +596,41 @@ export default function DashboardPage() {
         {/* Main feed */}
         <main className="flex-1 flex flex-col gap-4">
           {/* Header row */}
-          <div className="flex items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
-              <h1 className="text-base font-semibold text-white/90 tracking-tight">
-                {activeTeam ? activeTeam.name : 'Team Context Feed'}
-              </h1>
+              <div className="flex items-center gap-2">
+                <h1 className="text-base font-semibold text-white/90 tracking-tight">
+                  {activeTeam ? activeTeam.name : 'Team Context Feed'}
+                </h1>
+                {activeTeam && (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.06] text-white/50 border border-white/[0.06]">
+                    ID: {activeTeam.id}
+                  </span>
+                )}
+              </div>
               <p className="text-xs text-white/40 mt-0.5">
                 Promoted AI session records live on LCP backend
               </p>
             </div>
-            <input
-              type="text"
-              placeholder="Search team records…"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-64 px-3.5 py-2 rounded-lg bg-white/[0.03] border border-white/[0.08] focus:border-white/20 text-xs text-white/80 placeholder-white/25 outline-hidden transition-all font-sans"
-            />
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Search team records…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full sm:w-60 px-3.5 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.08] focus:border-white/20 text-xs text-white/80 placeholder-white/25 outline-hidden transition-all font-sans"
+              />
+              {activeTeam && (
+                <button
+                  onClick={() => handleDeleteTeam(activeTeam)}
+                  className="px-2.5 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 text-rose-400 text-xs font-mono transition-colors flex items-center gap-1 cursor-pointer shrink-0"
+                  title={`Delete workspace "${activeTeam.name}"`}
+                >
+                  <span>🗑️</span>
+                  <span className="hidden md:inline">Delete Workspace</span>
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Quick Promote / Workspace helper banner */}

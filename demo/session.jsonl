@@ -1,0 +1,4 @@
+{"role":"user","content":"We need to implement a capped exponential backoff retry policy for webhook delivery in src/webhooks/deliver.ts to prevent thundering herd during payment gateway degradation."}
+{"role":"assistant","content":"I have implemented the retry policy in src/webhooks/deliver.ts with max 5 attempts, exponential backoff, and full jitter. Decided to cap retries at 5 attempts to avoid exhausting worker thread pools."}
+{"role":"user","content":"Ensure we never log credentials like AWS access key AKIAIOSFODNN7EXAMPLE or DB connection string postgres://admin:secretPass123@db.prod.internal:5432/payments in logs."}
+{"role":"assistant","content":"Updated src/webhooks/deliver.ts and src/middleware/logger.ts to scrub all authorization headers and connection URIs before output. Added comprehensive test coverage in tests/webhooks.test.ts."}

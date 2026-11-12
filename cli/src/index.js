@@ -96,7 +96,7 @@ export function createProgram() {
 
   program
     .command('team <action> [arg]')
-    .description('Manage team memberships and invites (create | list | invite | join)')
+    .description('Manage team memberships and invites (create | list | invite | join | remove | leave)')
     .action((action, arg, options) => teamCommand(action, arg, options));
 
   program

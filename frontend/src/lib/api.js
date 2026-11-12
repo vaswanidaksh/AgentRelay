@@ -109,6 +109,12 @@ export async function joinTeam(token) {
   return res.data.team;
 }
 
+/** DELETE /api/v1/teams/:id */
+export async function deleteTeam(teamId) {
+  const res = await apiClient.delete(`/teams/${teamId}`);
+  return res.data;
+}
+
 // ---------------------------------------------------------------------------
 // Records & Shared Context APIs (PRD FR-019, FR-020, FR-022)
 // ---------------------------------------------------------------------------

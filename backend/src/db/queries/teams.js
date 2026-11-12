@@ -121,3 +121,16 @@ export function acceptInvite(inviteId, userId) {
 
   return join();
 }
+
+export function deleteTeam(teamId) {
+  const db = getDb();
+  const remove = db.transaction(() => {
+    db.prepare('DELETE FROM audit_events WHERE team_id = ?').run(teamId);
+    db.prepare('DELETE FROM inbox WHERE team_id = ?').run(teamId);
+    db.prepare('DELETE FROM records WHERE team_id = ?').run(teamId);
+    db.prepare('DELETE FROM invites WHERE team_id = ?').run(teamId);
+    db.prepare('DELETE FROM memberships WHERE team_id = ?').run(teamId);
+    db.prepare('DELETE FROM teams WHERE id = ?').run(teamId);
+  });
+  remove();
+}
