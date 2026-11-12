@@ -139,6 +139,7 @@ function findTranscriptFiles(dirPath) {
           lowerName.includes('cursor') ||
           lowerName.includes('windsurf') ||
           lowerName.includes('aider') ||
+          lowerName.includes('codex') ||
           fullPath.includes('.agentrelay') ||
           fullPath.includes('.claude')
         ) {

@@ -118,7 +118,7 @@ export default function CreateTeamModal({ isOpen, onClose, onCreated }) {
               {copiedCli ? 'Copied ✓' : 'Copy Command'}
             </button>
           </div>
-          <code className="block p-2 rounded-lg bg-black/60 border border-white/[0.06] text-[11px] font-mono text-emerald-400 select-all truncate">
+          <code className="block p-2 rounded-lg bg-black/60 border border-white/[0.06] text-[11px] font-mono text-emerald-400 select-all break-all overflow-x-auto">
             $ {cliCommand}
           </code>
         </div>

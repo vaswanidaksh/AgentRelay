@@ -262,7 +262,7 @@ export default function CliCommandsModal({ isOpen, onClose, activeTeamId, record
                           <span className="text-xs font-medium text-white/90">{c.name}</span>
                           <span className="text-[11px] text-white/40">— {c.desc}</span>
                         </div>
-                        <code className="block text-xs font-mono text-emerald-400/90 bg-black/60 px-2.5 py-1 rounded-md border border-white/[0.06] select-all truncate">
+                        <code className="block text-xs font-mono text-emerald-400/90 bg-black/60 px-2.5 py-1 rounded-md border border-white/[0.06] select-all break-all sm:truncate">
                           {c.cmd}
                         </code>
                       </div>
@@ -291,7 +291,7 @@ export default function CliCommandsModal({ isOpen, onClose, activeTeamId, record
         </div>
 
         {/* Footer info */}
-        <div className="border-t border-white/[0.08] pt-3 flex items-center justify-between text-xs text-white/40">
+        <div className="border-t border-white/[0.08] pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-white/40">
           <span>Tip: Replace placeholder arguments with your actual project values</span>
           <Link to="/docs" target="_blank" className="text-emerald-400 hover:underline">
             View Complete Interactive Manual →
