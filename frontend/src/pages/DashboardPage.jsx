@@ -315,6 +315,44 @@ export default function DashboardPage() {
 
           <div className="h-4 w-px bg-white/[0.08] shrink-0" />
 
+          {/* Mode Switcher: Personal Vault vs Team Workspace */}
+          <div className="flex items-center bg-[#111111] p-0.5 rounded-lg border border-white/[0.1] text-xs h-8 shrink-0">
+            <button
+              onClick={() => {
+                setViewMode('vault');
+                localStorage.setItem('ar_view_mode', 'vault');
+                fetchMyRecords();
+              }}
+              className={`h-7 px-2.5 rounded-md text-[11px] font-mono transition-all cursor-pointer flex items-center gap-1.5 ${
+                viewMode === 'vault'
+                  ? 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30'
+                  : 'text-white/50 hover:text-white'
+              }`}
+              title="Personal Context Vault — all records you authored"
+            >
+              <span>📁</span>
+              <span className="hidden sm:inline">My Vault</span>
+              <span className="text-[10px] font-mono opacity-60">({myRecords.length})</span>
+            </button>
+            <button
+              onClick={() => {
+                setViewMode('team');
+                localStorage.setItem('ar_view_mode', 'team');
+              }}
+              className={`h-7 px-2.5 rounded-md text-[11px] font-mono transition-all cursor-pointer flex items-center gap-1.5 ${
+                viewMode === 'team'
+                  ? 'bg-cyan-500/20 text-cyan-300 font-semibold border border-cyan-500/30'
+                  : 'text-white/50 hover:text-white'
+              }`}
+              title="Team Workspaces Feed"
+            >
+              <span>👥</span>
+              <span className="hidden sm:inline">Team Feed</span>
+            </button>
+          </div>
+
+          <div className="h-4 w-px bg-white/[0.08] hidden sm:block shrink-0" />
+
           {/* Workspace Switcher Pill */}
           <div className="flex items-center gap-1.5 min-w-0">
             <div className="relative flex items-center">
@@ -637,25 +675,33 @@ export default function DashboardPage() {
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-base sm:text-lg font-semibold text-white/90 tracking-tight">
-                  {activeTeam ? activeTeam.name : 'Team Context Feed'}
+                  {viewMode === 'vault' ? 'My Context Records' : (activeTeam ? activeTeam.name : 'Team Context Feed')}
                 </h1>
-                {activeTeam && (
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(activeTeam.id);
-                      setCopiedTeamId(true);
-                      setTimeout(() => setCopiedTeamId(false), 2000);
-                    }}
-                    className="text-[11px] font-mono px-2 py-0.5 rounded bg-white/[0.05] hover:bg-white/[0.10] text-cyan-300 border border-white/[0.08] flex items-center gap-1 transition-colors cursor-pointer"
-                    title="Click to copy Team ID"
-                  >
-                    <span>ID: {activeTeam.id}</span>
-                    <span className="text-[10px] text-white/40">{copiedTeamId ? '✓' : '📋'}</span>
-                  </button>
+                {viewMode === 'vault' ? (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    Personal Vault • {myRecords.length} record(s)
+                  </span>
+                ) : (
+                  activeTeam && (
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(activeTeam.id);
+                        setCopiedTeamId(true);
+                        setTimeout(() => setCopiedTeamId(false), 2000);
+                      }}
+                      className="text-[11px] font-mono px-2 py-0.5 rounded bg-white/[0.05] hover:bg-white/[0.10] text-cyan-300 border border-white/[0.08] flex items-center gap-1 transition-colors cursor-pointer"
+                      title="Click to copy Team ID"
+                    >
+                      <span>ID: {activeTeam.id}</span>
+                      <span className="text-[10px] text-white/40">{copiedTeamId ? '✓' : '📋'}</span>
+                    </button>
+                  )
                 )}
               </div>
               <p className="text-xs text-white/40 mt-0.5">
-                Promoted AI session records live on LCP backend
+                {viewMode === 'vault'
+                  ? 'Your permanent session history, decisions, and distilled cards (persists across all teams)'
+                  : 'Promoted AI session records live on LCP backend'}
               </p>
             </div>
 
@@ -665,14 +711,14 @@ export default function DashboardPage() {
                 <span className="absolute left-3 top-2 pointer-events-none text-white/30 text-xs">🔍</span>
                 <input
                   type="text"
-                  placeholder="Search team records…"
+                  placeholder={viewMode === 'vault' ? "Search your context records…" : "Search team records…"}
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="w-full pl-8 pr-3.5 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.08] focus:border-white/20 text-xs text-white/85 placeholder-white/30 outline-hidden transition-all font-sans"
                 />
               </div>
 
-              {activeTeam && (
+              {viewMode === 'team' && activeTeam && (
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     onClick={handleCreateInvite}
@@ -697,29 +743,51 @@ export default function DashboardPage() {
           </div>
 
           {/* Quick Promote / Workspace helper banner */}
-          <div className="p-3.5 rounded-xl border border-white/[0.08] bg-[#111111] flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-mono">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-emerald-400 font-bold shrink-0">⚡</span>
-              <span className="text-white/70 font-sans truncate">
-                Promote local record to <strong className="text-white font-mono">{activeTeam?.name || 'this team'}</strong>:
-              </span>
+          {viewMode === 'vault' ? (
+            <div className="p-3.5 rounded-xl border border-emerald-500/20 bg-emerald-950/20 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-mono">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-emerald-400 font-bold shrink-0">🔒</span>
+                <span className="text-white/80 font-sans">
+                  <strong>Personal Context Vault:</strong> Your previous context records stay preserved here even if team workspaces change or expire.
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <code className="text-[11px] text-emerald-300 bg-black/60 px-2.5 py-1.5 rounded-md border border-emerald-500/20 select-all">
+                  agentrelay daemon
+                </code>
+                <button
+                  onClick={() => setShowCliModal(true)}
+                  className="h-7 px-2.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-white/70 hover:text-white text-xs font-sans transition-colors cursor-pointer"
+                >
+                  CLI Guide
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-2 max-w-full overflow-hidden">
-              <code className="text-[11px] text-emerald-400 bg-black/60 px-2.5 py-1.5 rounded-md border border-white/[0.06] select-all break-all overflow-x-auto">
-                agentrelay promote &lt;recordId&gt; --team {activeTeam?.id || '&lt;teamId&gt;'}
-              </code>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(`agentrelay promote <recordId> --team ${activeTeam?.id || '<teamId>'}`);
-                  setCopiedPromoteCmd('global');
-                  setTimeout(() => setCopiedPromoteCmd(null), 2000);
-                }}
-                className="h-7 px-2.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-white/75 hover:text-white text-xs font-sans transition-colors shrink-0 cursor-pointer"
-              >
-                {copiedPromoteCmd === 'global' ? '✓ Copied' : 'Copy'}
-              </button>
+          ) : (
+            <div className="p-3.5 rounded-xl border border-white/[0.08] bg-[#111111] flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-mono">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-emerald-400 font-bold shrink-0">⚡</span>
+                <span className="text-white/70 font-sans truncate">
+                  Promote local record to <strong className="text-white font-mono">{activeTeam?.name || 'this team'}</strong>:
+                </span>
+              </div>
+              <div className="flex items-center gap-2 max-w-full overflow-hidden">
+                <code className="text-[11px] text-emerald-400 bg-black/60 px-2.5 py-1.5 rounded-md border border-white/[0.06] select-all break-all overflow-x-auto">
+                  agentrelay promote &lt;recordId&gt; --team {activeTeam?.id || '&lt;teamId&gt;'}
+                </code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(`agentrelay promote <recordId> --team ${activeTeam?.id || '<teamId>'}`);
+                    setCopiedPromoteCmd('global');
+                    setTimeout(() => setCopiedPromoteCmd(null), 2000);
+                  }}
+                  className="h-7 px-2.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-white/75 hover:text-white text-xs font-sans transition-colors shrink-0 cursor-pointer"
+                >
+                  {copiedPromoteCmd === 'global' ? '✓ Copied' : 'Copy'}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Cards or Empty State */}
           {loading ? (
@@ -831,11 +899,49 @@ export default function DashboardPage() {
                       </div>
                     </div>
 
+                    {/* Share to workspace button (available in vault mode) */}
+                    {viewMode === 'vault' && teams.length > 0 && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="my-2.5 p-2 rounded-lg bg-black/40 border border-white/[0.06] flex flex-wrap items-center justify-between gap-2 text-xs"
+                      >
+                        <span className="text-[11px] text-white/50 font-sans">
+                          Share this personal record to team workspace:
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            value={targetShareTeam[s.id] || activeTeam?.id || teams[0].id}
+                            onChange={(e) => setTargetShareTeam(prev => ({ ...prev, [s.id]: e.target.value }))}
+                            className="bg-[#111111] border border-white/[0.12] rounded px-2 py-1 text-[11px] text-white/80 font-mono focus:outline-hidden cursor-pointer"
+                          >
+                            {teams.map(t => (
+                              <option key={t.id} value={t.id} className="bg-[#1A1A1A]">
+                                {t.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={(e) => handleShareToTeam(e, s.id, targetShareTeam[s.id] || activeTeam?.id || teams[0].id)}
+                            disabled={sharingStatus[s.id] === 'sharing'}
+                            className="px-2.5 py-1 rounded bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-[11px] font-mono font-medium transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            {sharingStatus[s.id] === 'sharing' ? 'Sharing…' : sharingStatus[s.id] === 'done' ? '✓ Shared' : 'Share →'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-mono text-white/30 pt-2 border-t border-white/[0.04]">
                       <span>📁 {s.filesCount} file(s) touched</span>
                       <span>💡 {s.decisionsCount} decision(s)</span>
                       <span>🏷️ {s.projectTag}</span>
-                      <span className="sm:ml-auto text-[10px] text-emerald-400/80">LCP Record Verified</span>
+                      {viewMode === 'vault' ? (
+                        <span className="sm:ml-auto text-[10px] text-emerald-400/80 font-mono">
+                          Vault Preserved
+                        </span>
+                      ) : (
+                        <span className="sm:ml-auto text-[10px] text-emerald-400/80">LCP Record Verified</span>
+                      )}
                     </div>
                   </div>
                 </TiltCard>
