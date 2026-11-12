@@ -55,11 +55,27 @@ export async function pushCommand(recordId, options = {}) {
     return;
   }
 
+  const config = loadConfig();
+  let targetTeamId = options.team;
+  if (!targetTeamId) {
+    const teamsRes = await fetch(`${config.serverUrl}/api/v1/teams`, {
+      headers: { 'Authorization': `Bearer ${auth.token}` }
+    });
+    if (teamsRes.status === 401) {
+      console.error('Error: Session expired or invalid token (401). Please run "agentrelay login" to refresh your credentials.');
+      process.exit(1);
+    }
+    const teamsData = await teamsRes.json().catch(() => ({}));
+    if (teamsData.teams && teamsData.teams.length > 0) {
+      targetTeamId = teamsData.teams[0].id;
+    }
+  }
+
   console.log(`🚀 Pushing ${candidates.length} context record(s) to your Personal Context Vault...`);
   let successCount = 0;
   for (const c of candidates) {
     try {
-      await promoteCommand(c.recordId, options);
+      await promoteCommand(c.recordId, { ...options, team: targetTeamId });
       successCount++;
     } catch (e) {
       console.warn(`  - Skipped ${c.recordId}: ${e.message}`);
