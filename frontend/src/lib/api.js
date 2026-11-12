@@ -137,6 +137,18 @@ export async function withdrawRecord(teamId, recordId) {
   return res.data;
 }
 
+/** GET /api/v1/me/records — Personal Context Vault */
+export async function listMyRecords() {
+  const res = await apiClient.get('/me/records');
+  return res.data.records || [];
+}
+
+/** POST /api/v1/teams/:teamId/records/:recordId/share */
+export async function shareRecordToTeam(teamId, recordId) {
+  const res = await apiClient.post(`/teams/${teamId}/records/${recordId}/share`);
+  return res.data;
+}
+
 // ---------------------------------------------------------------------------
 // Handoffs & Inbox APIs (PRD FR-023, BR-010)
 // ---------------------------------------------------------------------------

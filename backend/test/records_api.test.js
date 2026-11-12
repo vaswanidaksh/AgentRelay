@@ -231,4 +231,37 @@ describe('Records API Lifecycle & Ingestion (TEST-013, TEST-014, TEST-016, TEST-
     });
     assert.strictEqual(delRes.status, 403);
   });
+
+  it('Author can list all personal context records via GET /api/v1/me/records', async () => {
+    const res = await client('GET', '/api/v1/me/records', {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.strictEqual(res.status, 200);
+    const body = await res.json();
+    assert.ok(Array.isArray(body.records));
+    assert.ok(body.records.length > 0);
+    const myRec = body.records.find(r => r.authorId === user.id);
+    assert.ok(myRec);
+  });
+
+  it('Author can share a record to another team workspace', async () => {
+    const secondTeam = createTeam({ id: 't_second_team', name: 'Second Team', createdBy: user.id });
+    const testRecordId = '9b1f3c2e-0000-0000-0000-0857ef51a002';
+
+    const shareRes = await client('POST', `/api/v1/teams/${secondTeam.id}/records/${testRecordId}/share`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.strictEqual(shareRes.status, 200);
+    const shareBody = await shareRes.json();
+    assert.strictEqual(shareBody.record.recordId, testRecordId);
+
+    // Verify it now appears in second team
+    const checkRes = await client('GET', `/api/v1/teams/${secondTeam.id}/records`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    assert.strictEqual(checkRes.status, 200);
+    const checkBody = await checkRes.json();
+    const found = checkBody.records.find(r => r.recordId === testRecordId);
+    assert.ok(found);
+  });
 });
