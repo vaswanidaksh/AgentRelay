@@ -74,12 +74,12 @@ export default function InstallPage() {
         </div>
 
         {/* Tab Navigation */}
-        <div className="sticky top-20 z-20 bg-[#111111]/90 backdrop-blur-md border border-white/[0.08] rounded-full px-2 py-1.5 mb-10 flex items-center justify-around text-xs font-medium shadow-lg">
+        <div className="sticky top-20 z-20 bg-[#111111]/90 backdrop-blur-md border border-white/[0.08] rounded-2xl sm:rounded-full px-2 py-1.5 mb-10 flex items-center gap-1 overflow-x-auto justify-start sm:justify-around text-xs font-medium shadow-lg">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-1.5 rounded-full transition-all duration-200 cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-full transition-all duration-200 cursor-pointer shrink-0 whitespace-nowrap ${
                 activeTab === tab.id
                   ? 'bg-white/[0.12] text-white font-semibold'
                   : 'text-white/50 hover:text-white'

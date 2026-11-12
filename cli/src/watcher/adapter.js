@@ -51,6 +51,7 @@ export function detectAgentType(filePath) {
   if (lower.includes('.windsurf') || lower.includes('windsurf')) return 'windsurf';
   if (lower.includes('aider')) return 'aider';
   if (lower.includes('copilot')) return 'copilot';
+  if (lower.includes('codex')) return 'codex';
   return 'agentrelay-generic';
 }
 

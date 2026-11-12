@@ -31,8 +31,8 @@ export default function JoinWorkspaceModal({ isOpen, onClose, onJoined }) {
     } catch (err) {
       setError(
         err.response?.data?.error?.message ||
-          err.message ||
-          'Failed to join team. The token may be expired or invalid.'
+        err.message ||
+        'Failed to join team. The token may be expired or invalid.'
       );
     } finally {
       setLoading(false);
@@ -130,7 +130,7 @@ export default function JoinWorkspaceModal({ isOpen, onClose, onJoined }) {
               {copiedCli ? 'Copied ✓' : 'Copy Command'}
             </button>
           </div>
-          <code className="block p-2 rounded-lg bg-black/60 border border-white/[0.06] text-[11px] font-mono text-emerald-400 select-all truncate">
+          <code className="block p-2 rounded-lg bg-black/60 border border-white/[0.06] text-[11px] font-mono text-emerald-400 select-all break-all overflow-x-auto">
             $ {cliCommand}
           </code>
         </div>
