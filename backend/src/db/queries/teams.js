@@ -1,5 +1,6 @@
 import { getDb } from '../connection.js';
 import crypto from 'crypto';
+import { v4 as uuidv4 } from 'uuid';
 import { config } from '../../config.js';
 
 export function createTeam({ id, name, createdBy }) {
@@ -133,4 +134,26 @@ export function deleteTeam(teamId) {
     db.prepare('DELETE FROM teams WHERE id = ?').run(teamId);
   });
   remove();
+}
+
+export function getOrCreatePersonalTeam(userId, handle) {
+  const db = getDb();
+  const existing = db.prepare(`
+    SELECT t.id, t.name, t.created_by, t.created_at
+    FROM teams t
+    JOIN memberships m ON t.id = m.team_id
+    WHERE m.user_id = ? AND t.created_by = ?
+    ORDER BY t.created_at ASC
+    LIMIT 1
+  `).get(userId, userId);
+
+  if (existing) return existing;
+
+  const handleClean = handle ? handle.replace(/^@/, '') : 'My';
+  const defaultTeamId = `t_${uuidv4().replace(/-/g, '').slice(0, 10)}`;
+  return createTeam({
+    id: defaultTeamId,
+    name: `${handleClean}'s Personal Vault`,
+    createdBy: userId,
+  });
 }

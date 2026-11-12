@@ -50,6 +50,12 @@ export default function CliCommandsModal({ isOpen, onClose, activeTeamId, record
       title: '📤 Add Code & Context to Workspace',
       commands: [
         {
+          id: 'push',
+          name: 'Push to Personal Vault',
+          cmd: 'agentrelay push',
+          desc: 'Upload local context records into your personal dashboard vault',
+        },
+        {
           id: 'promote',
           name: 'Promote Record to Team',
           cmd: `agentrelay promote ${currentRecord} --team ${currentTeam}`,

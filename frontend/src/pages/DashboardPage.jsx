@@ -15,6 +15,8 @@ import {
   markInboxRead,
   listAuditTrail,
   verifyAuditTrail,
+  listMyRecords,
+  shareRecordToTeam,
 } from '../lib/api';
 
 export default function DashboardPage() {
@@ -38,6 +40,81 @@ export default function DashboardPage() {
   const [copiedPromoteCmd, setCopiedPromoteCmd] = useState(null);
   const [copiedTeamId, setCopiedTeamId] = useState(false);
 
+  // View Mode: 'team' (shared workspace feed) vs 'vault' (personal context records)
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('ar_view_mode') || 'team');
+  const [myRecords, setMyRecords] = useState([]);
+  const [myRecordsLoading, setMyRecordsLoading] = useState(false);
+  const [targetShareTeam, setTargetShareTeam] = useState({});
+  const [sharingStatus, setSharingStatus] = useState({});
+
+  const formatRecord = (r) => {
+    const rec = r.record || r;
+    const content = rec.content || {};
+    const author = rec.author || {};
+    const source = rec.source || {};
+
+    return {
+      id: rec.recordId || r.recordId,
+      title: content.title || 'Untitled Session',
+      summary: content.summary || 'Context record summary',
+      agent: source.agent || 'Claude Code',
+      user: author.handle || '@developer',
+      userName: author.handle || 'Teammate',
+      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${author.handle || 'user'}`,
+      duration: `${rec.source?.eventRange ? rec.source.eventRange[1] - rec.source.eventRange[0] : 15} events`,
+      timestamp: rec.times?.createdAt ? new Date(rec.times.createdAt).toLocaleDateString() : 'Recently',
+      filesCount: (content.filesTouched || []).length,
+      decisionsCount: (content.decisions || []).length,
+      sensitivity: rec.sensitivity?.label || 'none',
+      projectTag: rec.acl?.projectTag || source.projectTag || 'shared',
+      teamName: r.teamName || r.team_name,
+      teamId: r.teamId || r.team_id,
+      raw: rec
+    };
+  };
+
+  const fetchMyRecords = async () => {
+    try {
+      setMyRecordsLoading(true);
+      const raw = await listMyRecords();
+      const formatted = raw
+        .filter(r => !r.isWithdrawn && !r.withdrawn)
+        .map(formatRecord);
+      setMyRecords(formatted);
+    } catch (e) {
+      console.warn('Failed to fetch personal records:', e.message);
+    } finally {
+      setMyRecordsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMyRecords();
+  }, []);
+
+  const handleShareToTeam = async (e, recordId, targetTeamId) => {
+    e.stopPropagation();
+    if (!targetTeamId) {
+      alert('Please select a team workspace first.');
+      return;
+    }
+    setSharingStatus(prev => ({ ...prev, [recordId]: 'sharing' }));
+    try {
+      await shareRecordToTeam(targetTeamId, recordId);
+      setSharingStatus(prev => ({ ...prev, [recordId]: 'done' }));
+      setTimeout(() => {
+        setSharingStatus(prev => ({ ...prev, [recordId]: null }));
+      }, 3000);
+      if (activeTeam?.id === targetTeamId) {
+        const teamRecs = await listRecords(targetTeamId);
+        setRecords(teamRecs.filter(r => !r.isWithdrawn && !r.withdrawn).map(formatRecord));
+      }
+    } catch (err) {
+      alert('Failed to share record: ' + (err.response?.data?.error?.message || err.message));
+      setSharingStatus(prev => ({ ...prev, [recordId]: null }));
+    }
+  };
+
   const [search, setSearch] = useState('');
   const [person, setPerson] = useState('all');
   const [agent, setAgent] = useState('all');
@@ -58,244 +135,170 @@ export default function DashboardPage() {
     try {
       const items = await listInbox();
       setInboxItems(items);
-    } catch (e) {
-      console.warn('Failed to fetch inbox:', e.message);
+    } catch {
+      // ignore
     }
   };
 
-  useEffect(() => {
-    fetchInbox();
-  }, []);
-
-  const handleMarkRead = async (id) => {
+  const handleMarkInboxRead = async (id) => {
     try {
       await markInboxRead(id);
       setInboxItems((prev) =>
         prev.map((item) => (item.id === id ? { ...item, state: 'read' } : item))
       );
-    } catch (e) {
-      console.error('Failed to mark read:', e.message);
+    } catch {
+      // ignore
     }
   };
 
-  const handleOpenAudit = async () => {
-    if (!activeTeam) return;
-    setShowAuditModal(true);
+  const fetchAudit = async (teamId) => {
+    if (!teamId) return;
     setAuditLoading(true);
     setAuditError(null);
-    setAuditVerifyResult(null);
     try {
-      const data = await listAuditTrail(activeTeam.id);
+      const data = await listAuditTrail(teamId);
       setAuditEvents(data.events || []);
     } catch (e) {
-      setAuditError(
-        e.response?.data?.error?.message ||
-          e.message ||
-          'Failed to load audit trail (admin privileges required).'
-      );
+      setAuditError(e.message);
     } finally {
       setAuditLoading(false);
     }
   };
 
-  const handleVerifyAuditChain = async () => {
+  const handleVerifyAudit = async () => {
     if (!activeTeam) return;
     try {
-      setAuditLoading(true);
       const res = await verifyAuditTrail(activeTeam.id);
       setAuditVerifyResult(res);
     } catch (e) {
-      setAuditError('Verification failed: ' + (e.response?.data?.error?.message || e.message));
-    } finally {
-      setAuditLoading(false);
+      setAuditVerifyResult({ valid: false, error: e.message });
     }
   };
 
-  const pendingInboxCount = inboxItems.filter((i) => i.state === 'pending').length;
-
-  // Load teams on mount
   useEffect(() => {
-    let isMounted = true;
-    async function fetchInitialData() {
-      try {
-        setLoading(true);
-        const teamList = await listTeams();
-        if (!isMounted) return;
-        setTeams(teamList);
-        if (teamList.length > 0) {
-          const savedTeamId = localStorage.getItem('ar_active_team_id');
-          const matched = teamList.find((t) => t.id === savedTeamId);
-          const chosen = matched || teamList[0];
-          setActiveTeam(chosen);
-          localStorage.setItem('ar_active_team_id', chosen.id);
-        } else {
-          setActiveTeam(null);
-          localStorage.removeItem('ar_active_team_id');
-        }
-      } catch (err) {
-        if (!isMounted) return;
-        setError(err.message || 'Failed to load teams');
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    }
-    fetchInitialData();
-    return () => { isMounted = false; };
+    fetchInbox();
+    const interval = setInterval(fetchInbox, 10000);
+    return () => clearInterval(interval);
   }, []);
 
-  // Load team records and members when activeTeam changes
+  const fetchTeams = async () => {
+    try {
+      setLoading(true);
+      const data = await listTeams();
+      setTeams(data);
+      if (data.length > 0) {
+        const savedTeamId = localStorage.getItem('ar_active_team_id');
+        const found = savedTeamId ? data.find((t) => t.id === savedTeamId) : null;
+        setActiveTeam(found || data[0]);
+      } else {
+        setActiveTeam(null);
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to load teams');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTeams();
+  }, []);
+
   useEffect(() => {
     if (!activeTeam) return;
-    let isMounted = true;
-
-    async function loadTeamData() {
+    const fetchTeamDetails = async () => {
       try {
         setLoading(true);
-        setError(null);
-
-        const [memberList, recordList] = await Promise.all([
-          listMembers(activeTeam.id).catch(() => []),
-          listRecords(activeTeam.id).catch(() => [])
+        const [memData, recData] = await Promise.all([
+          listMembers(activeTeam.id),
+          listRecords(activeTeam.id),
         ]);
-
-        if (!isMounted) return;
-
-        setMembers(memberList);
-        // Map raw LCP server records into display items
-        const formatted = recordList
-          .filter(r => !r.isWithdrawn && !r.withdrawn)
-          .map(r => {
-            const rec = r.record || r;
-            const content = rec.content || {};
-            const author = rec.author || {};
-            const source = rec.source || {};
-
-            return {
-              id: rec.recordId || r.recordId,
-              title: content.title || 'Untitled Session',
-              summary: content.summary || 'Context record summary',
-              agent: source.agent || 'Claude Code',
-              user: author.handle || '@developer',
-              userName: author.handle || 'Teammate',
-              avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${author.handle || 'user'}`,
-              duration: `${rec.source?.eventRange ? rec.source.eventRange[1] - rec.source.eventRange[0] : 15} events`,
-              timestamp: rec.times?.createdAt ? new Date(rec.times.createdAt).toLocaleDateString() : 'Recently',
-              filesCount: (content.filesTouched || []).length,
-              decisionsCount: (content.decisions || []).length,
-              sensitivity: rec.sensitivity?.label || 'none',
-              projectTag: rec.acl?.projectTag || source.projectTag || 'shared',
-              raw: rec
-            };
-          });
-
-        setRecords(formatted);
+        setMembers(memData);
+        setRecords(
+          recData.filter((r) => !r.isWithdrawn && !r.withdrawn).map(formatRecord)
+        );
       } catch (err) {
-        if (!isMounted) return;
-        setError(err.message || 'Failed to load team context');
+        setError(err.message || 'Failed to load team data');
       } finally {
-        if (isMounted) setLoading(false);
+        setLoading(false);
       }
-    }
-
-    loadTeamData();
-    return () => { isMounted = false; };
+    };
+    fetchTeamDetails();
   }, [activeTeam]);
 
   const handleCreateInvite = async () => {
     if (!activeTeam) return;
     try {
-      const inv = await createInvite(activeTeam.id);
-      setInviteToken(inv.token || inv.rawToken);
+      const data = await createInvite(activeTeam.id);
+      setInviteToken(data.token);
+      navigator.clipboard.writeText(data.token);
+      alert(`Invite Token copied to clipboard!\n\nToken: ${data.token}`);
     } catch (err) {
-      alert('Error creating invite: ' + (err.response?.data?.error?.message || err.message));
+      alert(`Failed to create invite: ${err.message}`);
     }
   };
 
-  const handleJoinSuccess = async (joinedTeam) => {
-    try {
-      const updatedTeams = await listTeams();
-      setTeams(updatedTeams);
-      if (joinedTeam) {
-        const match = updatedTeams.find((t) => t.id === joinedTeam.id);
-        const target = match || joinedTeam;
-        setActiveTeam(target);
-        localStorage.setItem('ar_active_team_id', target.id);
-      } else if (updatedTeams.length > 0) {
-        setActiveTeam(updatedTeams[0]);
-        localStorage.setItem('ar_active_team_id', updatedTeams[0].id);
-      }
-    } catch (err) {
-      console.error('Failed to reload teams:', err);
-    }
+  const handleJoinSuccess = async (joinedTeamId) => {
+    await fetchTeams();
+    const joined = teams.find((t) => t.id === joinedTeamId);
+    if (joined) setActiveTeam(joined);
   };
 
-  const handleCreateTeamSuccess = async (newTeam) => {
-    try {
-      const updatedTeams = await listTeams();
-      setTeams(updatedTeams);
-      if (newTeam) {
-        const match = updatedTeams.find((t) => t.id === newTeam.id);
-        const target = match || newTeam;
-        setActiveTeam(target);
-        localStorage.setItem('ar_active_team_id', target.id);
-      }
-    } catch (err) {
-      console.error('Failed to reload teams:', err);
-    }
+  const handleCreateTeamSuccess = async (createdTeam) => {
+    await fetchTeams();
+    setActiveTeam(createdTeam);
   };
 
   const handleDeleteTeam = async (teamToDelete) => {
-    const targetTeam = teamToDelete || activeTeam;
-    if (!targetTeam) return;
-
-    const confirmMsg = `Are you sure you want to permanently delete workspace "${targetTeam.name}" (${targetTeam.id})?\n\nAll records, invites, and members in this workspace will be permanently deleted.`;
-    if (!window.confirm(confirmMsg)) return;
+    if (!teamToDelete) return;
+    const confirmed = window.confirm(
+      `Are you sure you want to delete workspace "${teamToDelete.name}"?\nThis action cannot be undone.`
+    );
+    if (!confirmed) return;
 
     try {
-      await deleteTeam(targetTeam.id);
-      const updatedTeams = teams.filter((t) => t.id !== targetTeam.id);
-      setTeams(updatedTeams);
-
-      if (activeTeam?.id === targetTeam.id) {
-        if (updatedTeams.length > 0) {
-          setActiveTeam(updatedTeams[0]);
-          localStorage.setItem('ar_active_team_id', updatedTeams[0].id);
+      await deleteTeam(teamToDelete.id);
+      const remainingTeams = teams.filter((t) => t.id !== teamToDelete.id);
+      setTeams(remainingTeams);
+      if (activeTeam?.id === teamToDelete.id) {
+        const nextActive = remainingTeams.length > 0 ? remainingTeams[0] : null;
+        setActiveTeam(nextActive);
+        if (nextActive) {
+          localStorage.setItem('ar_active_team_id', nextActive.id);
         } else {
-          setActiveTeam(null);
           localStorage.removeItem('ar_active_team_id');
-          setRecords([]);
-          setMembers([]);
         }
       }
     } catch (err) {
-      alert(
-        'Failed to delete workspace: ' +
-          (err.response?.data?.error?.message || err.message || 'Access denied or server error')
-      );
+      alert(`Failed to delete workspace: ${err.message}`);
     }
   };
 
-  const handleCopyRecordId = (e, recId) => {
+  const handleCopyRecordId = (e, recordId) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(recId);
-    setCopiedRecordId(recId);
+    navigator.clipboard.writeText(recordId);
+    setCopiedRecordId(recordId);
     setTimeout(() => setCopiedRecordId(null), 2000);
   };
 
-  const handleCopyPromoteCmd = (e, recId) => {
+  const handleCopyPromoteCmd = (e, recordId) => {
     e.stopPropagation();
-    const cmd = `agentrelay promote ${recId} --team ${activeTeam?.id || '<teamId>'}`;
+    const teamIdArg = activeTeam ? `--team ${activeTeam.id}` : '--team <teamId>';
+    const cmd = `agentrelay promote ${recordId} ${teamIdArg}`;
     navigator.clipboard.writeText(cmd);
-    setCopiedPromoteCmd(recId);
+    setCopiedPromoteCmd(recordId);
     setTimeout(() => setCopiedPromoteCmd(null), 2000);
   };
 
-  const filtered = records.filter((s) => {
-    const q = search.toLowerCase();
-    const matchQ = !q || s.title.toLowerCase().includes(q) || s.summary.toLowerCase().includes(q) || s.user.toLowerCase().includes(q);
-    const matchP = person === 'all' || s.user === person;
-    const matchA = agent === 'all' || s.agent.toLowerCase().includes(agent);
-    return matchQ && matchP && matchA;
+  const displayedRecords = viewMode === 'vault' ? myRecords : records;
+
+  const filtered = displayedRecords.filter((s) => {
+    const matchesSearch =
+      s.title.toLowerCase().includes(search.toLowerCase()) ||
+      s.summary.toLowerCase().includes(search.toLowerCase());
+    const matchesPerson = person === 'all' || s.user === person;
+    const matchesAgent = agent === 'all' || s.agent.toLowerCase().includes(agent.toLowerCase());
+    return matchesSearch && matchesPerson && matchesAgent;
   });
 
   return (
@@ -418,213 +421,253 @@ export default function DashboardPage() {
           <Link
             to="/docs"
             target="_blank"
-            rel="noreferrer"
-            className="h-8 px-2.5 sm:px-3 rounded-lg bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-white/70 hover:text-white text-xs font-mono transition-colors flex items-center gap-1 cursor-pointer"
-            title="Open Full Documentation"
+            className="h-8 px-2.5 sm:px-3 rounded-lg bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-white/75 hover:text-white text-xs font-mono font-medium transition-colors flex items-center gap-1.5 cursor-pointer"
+            title="Read Complete AgentRelay Architecture & Setup Docs"
           >
             <span>📖</span>
             <span className="hidden md:inline">Docs</span>
-            <span className="text-[10px] text-white/30 hidden md:inline">↗</span>
           </Link>
 
-          {/* Inbox Button */}
+          {/* Inbox button */}
           <button
-            onClick={() => {
-              setShowInboxModal(true);
-              fetchInbox();
-            }}
-            className="h-8 px-2.5 sm:px-3 rounded-lg bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-white/70 hover:text-white text-xs font-mono transition-colors relative flex items-center gap-1.5 cursor-pointer"
-            title="Team Handoff Inbox"
+            onClick={() => setShowInboxModal(true)}
+            className="relative h-8 px-2.5 sm:px-3 rounded-lg bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-white/75 hover:text-white text-xs font-mono font-medium transition-colors hidden lg:flex items-center gap-1.5 cursor-pointer"
+            title="Context Handoff Inbox"
           >
             <span>📥</span>
-            <span className="hidden lg:inline">Inbox</span>
-            {pendingInboxCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-cyan-400 text-black text-[10px] font-bold">
-                {pendingInboxCount}
+            <span>Inbox</span>
+            {inboxItems.filter((i) => i.state === 'pending').length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-cyan-500/20 border border-cyan-500/30 text-[10px] text-cyan-300 font-bold">
+                {inboxItems.filter((i) => i.state === 'pending').length}
               </span>
             )}
           </button>
 
-          {/* Audit Trail Button */}
+          {/* Audit trail button */}
           <button
-            onClick={handleOpenAudit}
-            className="h-8 px-2.5 sm:px-3 rounded-lg bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-white/70 hover:text-white text-xs font-mono transition-colors flex items-center gap-1.5 cursor-pointer"
-            title="Security Audit Trail"
+            onClick={() => {
+              if (activeTeam) fetchAudit(activeTeam.id);
+              setShowAuditModal(true);
+            }}
+            className="h-8 px-2.5 sm:px-3 rounded-lg bg-white/[0.04] border border-white/[0.08] hover:bg-white/[0.08] text-white/75 hover:text-white text-xs font-mono font-medium transition-colors hidden lg:flex items-center gap-1.5 cursor-pointer"
+            title="Cryptographic Hash-Chained Audit Trail (PRD FR-026)"
           >
             <span>🛡️</span>
-            <span className="hidden lg:inline">Audit</span>
+            <span>Audit Trail</span>
           </button>
 
-          {/* Server Connection Status (Desktop) */}
-          <div className="hidden xl:flex items-center gap-1.5 text-[11px] font-mono text-white/40 pl-2.5 pr-1 border-l border-white/[0.06]">
+          <div className="h-4 w-px bg-white/[0.08] hidden xl:block" />
+
+          {/* Cloud Server Live status */}
+          <div className="hidden xl:flex items-center gap-2 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            LCP Cloud
+            <span className="text-[11px]">LCP Cloud Server</span>
           </div>
 
           <div className="h-4 w-px bg-white/[0.08] hidden sm:block" />
 
-          {/* User Profile / Logout */}
-          <div className="flex items-center gap-2">
-            <button
-              onClick={logout}
-              className="text-[12px] font-mono text-white/40 hover:text-rose-400 transition-colors cursor-pointer px-1.5 py-1 hidden sm:inline"
-              title="Sign out of AgentRelay"
-            >
-              Sign out
-            </button>
-
-            <div
-              className="w-8 h-8 rounded-full bg-gradient-to-tr from-white/[0.05] to-white/[0.12] border border-white/[0.12] flex items-center justify-center text-xs font-semibold text-white/90 shadow-inner shrink-0"
-              title={user?.handle || user?.name || 'User'}
-            >
-              {user?.name?.[0] || user?.handle?.[1]?.toUpperCase() || 'U'}
-            </div>
-          </div>
-
-          {/* Mobile Sidebar / Drawer Toggle */}
+          {/* User Sign out */}
           <button
-            onClick={() => setShowMobileSidebar(!showMobileSidebar)}
-            className="md:hidden p-2 text-white/60 hover:text-white transition-colors cursor-pointer ml-1"
-            aria-label="Toggle Filters & Navigation"
+            onClick={logout}
+            className="hidden sm:flex text-xs font-mono text-white/40 hover:text-rose-400 transition-colors cursor-pointer"
+            title="Sign out of AgentRelay"
           >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1.5">
-              {showMobileSidebar ? (
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              ) : (
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
-              )}
-            </svg>
+            Sign out
           </button>
+
+          {/* Mobile Sidebar Hamburger Toggle */}
+          <button
+            onClick={() => setShowMobileSidebar(true)}
+            className="md:hidden w-8 h-8 rounded-lg bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-sm text-white/80 hover:text-white cursor-pointer"
+            aria-label="Open mobile navigation menu"
+          >
+            ☰
+          </button>
+
+          {/* Avatar button */}
+          <div
+            onClick={logout}
+            className="w-7 h-7 rounded-full bg-linear-to-tr from-cyan-500/20 to-emerald-500/20 border border-white/10 flex items-center justify-center text-xs font-mono text-cyan-300 cursor-pointer hover:border-rose-500/40 transition-colors"
+            title={`${user?.handle || 'User'} (Click to sign out)`}
+          >
+            {user?.handle?.[1]?.toUpperCase() || 'U'}
+          </div>
         </div>
       </header>
 
-      {/* Invite Modal / Notification */}
-      {inviteToken && (
-        <div className="bg-emerald-950/40 border-b border-emerald-500/20 px-8 py-2.5 flex items-center justify-between text-xs text-emerald-300">
+      {/* Main Container */}
+      <div className="flex-1 flex max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 gap-6">
+        {/* Desktop Sidebar (hidden on < md) */}
+        <aside className="w-60 shrink-0 hidden md:flex flex-col gap-6 font-mono text-xs">
+          {/* Main Feed View Switcher */}
           <div>
-            <span className="font-semibold">Team Invite Token Generated:</span>{' '}
-            <code className="bg-black/50 px-2 py-0.5 rounded font-mono text-white select-all">{inviteToken}</code>{' '}
-            (Teammate can run: <code className="text-white/80">agentrelay team join {inviteToken}</code>)
-          </div>
-          <button onClick={() => setInviteToken(null)} className="text-white/50 hover:text-white">✕</button>
-        </div>
-      )}
+            <span className="text-white/40 text-[10px] tracking-wider uppercase font-semibold block mb-2 px-1">
+              Navigation
+            </span>
+            <div className="flex flex-col gap-1">
+              <button
+                onClick={() => {
+                  setViewMode('vault');
+                  localStorage.setItem('ar_view_mode', 'vault');
+                  fetchMyRecords();
+                }}
+                className={`w-full py-2 px-3 rounded-lg border text-left transition-all cursor-pointer flex items-center justify-between ${
+                  viewMode === 'vault'
+                    ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 font-semibold'
+                    : 'bg-white/[0.02] border-white/[0.04] text-white/60 hover:bg-white/[0.06] hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span>📁</span>
+                  <span>My Context Records</span>
+                </div>
+                <span className="text-[10px] opacity-60">({myRecords.length})</span>
+              </button>
 
-      {/* Body */}
-      <div className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-7 flex gap-5">
-        {/* Sidebar */}
-        <aside className="w-56 shrink-0 hidden md:flex flex-col gap-4">
-          {/* Workspaces Management */}
-          <div className="rounded-xl border border-white/[0.06] bg-[#111111] p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30">
+              <button
+                onClick={() => {
+                  setViewMode('team');
+                  localStorage.setItem('ar_view_mode', 'team');
+                }}
+                className={`w-full py-2 px-3 rounded-lg border text-left transition-all cursor-pointer flex items-center justify-between ${
+                  viewMode === 'team'
+                    ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300 font-semibold'
+                    : 'bg-white/[0.02] border-white/[0.04] text-white/60 hover:bg-white/[0.06] hover:text-white'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span>👥</span>
+                  <span>Team Workspaces</span>
+                </div>
+                <span className="text-[10px] opacity-60">({teams.length})</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Workspaces List */}
+          <div>
+            <div className="flex items-center justify-between mb-2 px-1">
+              <span className="text-white/40 text-[10px] tracking-wider uppercase font-semibold">
                 Workspaces ({teams.length})
-              </p>
-              <div className="flex items-center gap-1">
+              </span>
+              <div className="flex items-center gap-1.5">
                 <button
                   onClick={() => setShowJoinModal(true)}
-                  className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 transition-colors cursor-pointer"
-                  title="Join workspace with invite token"
+                  className="text-[10px] text-cyan-400 hover:text-cyan-300 cursor-pointer"
                 >
                   Join
                 </button>
+                <span className="text-white/20">•</span>
                 <button
                   onClick={() => setShowCreateTeamModal(true)}
-                  className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.05] text-white/70 hover:bg-white/[0.1] transition-colors cursor-pointer"
-                  title="Create new workspace"
+                  className="text-[10px] text-white/60 hover:text-white cursor-pointer"
                 >
                   + New
                 </button>
               </div>
             </div>
-            <div className="space-y-1">
-              {teams.map((t) => (
-                <div
-                  key={t.id}
-                  className={`group/ws flex items-center justify-between rounded-lg px-2.5 py-1.5 transition-all ${
-                    activeTeam?.id === t.id
-                      ? 'bg-white/[0.08] text-white font-medium'
-                      : 'text-white/40 hover:bg-white/[0.04] hover:text-white/70'
-                  }`}
-                >
-                  <button
-                    onClick={() => {
-                      setActiveTeam(t);
-                      localStorage.setItem('ar_active_team_id', t.id);
-                    }}
-                    className="flex-1 text-left text-xs truncate flex items-center justify-between cursor-pointer mr-1"
-                  >
-                    <span className="truncate">{t.name}</span>
-                    {activeTeam?.id === t.id && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 ml-1" />
-                    )}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteTeam(t);
-                    }}
-                    className="opacity-0 group-hover/ws:opacity-100 text-white/30 hover:text-rose-400 hover:bg-rose-500/10 px-1 py-0.5 rounded text-[11px] transition-all cursor-pointer"
-                    title={`Delete workspace "${t.name}"`}
-                  >
-                    ✕
-                  </button>
+            <div className="flex flex-col gap-1 max-h-48 overflow-y-auto pr-1">
+              {teams.length === 0 ? (
+                <div className="p-3 rounded-lg bg-white/[0.02] border border-white/[0.04] text-white/40 text-center">
+                  No workspaces yet. Create one or join with an invite token.
                 </div>
-              ))}
+              ) : (
+                teams.map((t) => {
+                  const isActive = activeTeam?.id === t.id && viewMode === 'team';
+                  return (
+                    <div
+                      key={t.id}
+                      onClick={() => {
+                        setActiveTeam(t);
+                        setViewMode('team');
+                        localStorage.setItem('ar_view_mode', 'team');
+                        localStorage.setItem('ar_active_team_id', t.id);
+                      }}
+                      className={`group w-full py-1.5 px-3 rounded-lg border text-left transition-all cursor-pointer flex items-center justify-between ${
+                        isActive
+                          ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 font-medium'
+                          : 'bg-white/[0.02] border-white/[0.04] text-white/60 hover:bg-white/[0.06] hover:text-white'
+                      }`}
+                    >
+                      <span className="truncate flex-1">{t.name}</span>
+                      <div className="flex items-center gap-1.5">
+                        {isActive && <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteTeam(t);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 hover:text-rose-400 text-white/40 p-0.5 transition-opacity"
+                          title="Delete workspace"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
-          {/* Members */}
-          <div className="rounded-xl border border-white/[0.06] bg-[#111111] p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3">
-              Team Members ({members.length})
-            </p>
-            <div className="space-y-1">
-              <button
-                onClick={() => setPerson('all')}
-                className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-all flex items-center gap-2 ${
-                  person === 'all'
-                    ? 'bg-white/[0.08] text-white font-medium'
-                    : 'text-white/40 hover:bg-white/[0.04] hover:text-white/70'
-                }`}
-              >
-                <span className="w-1.5 h-1.5 rounded-full bg-white/40" />
-                All Teammates
-              </button>
-              {members.map((m) => (
+          {/* Members in Active Team */}
+          {activeTeam && (
+            <div>
+              <span className="text-white/40 text-[10px] tracking-wider uppercase font-semibold block mb-2 px-1">
+                Team Members ({members.length})
+              </span>
+              <div className="flex flex-col gap-1 max-h-40 overflow-y-auto pr-1">
                 <button
-                  key={m.id}
-                  onClick={() => setPerson(m.handle)}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-all flex items-center justify-between ${
-                    person === m.handle
-                      ? 'bg-white/[0.08] text-white font-medium'
-                      : 'text-white/40 hover:bg-white/[0.04] hover:text-white/70'
+                  onClick={() => setPerson('all')}
+                  className={`w-full py-1.5 px-3 rounded-lg border text-left transition-all cursor-pointer flex items-center gap-2 ${
+                    person === 'all'
+                      ? 'bg-white/[0.08] border-white/20 text-white'
+                      : 'bg-white/[0.02] border-white/[0.04] text-white/60 hover:bg-white/[0.06]'
                   }`}
                 >
-                  <span className="truncate">{m.handle}</span>
-                  <span className="text-[10px] font-mono text-white/20 uppercase">{m.role}</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-white/40" />
+                  <span>All Teammates</span>
                 </button>
-              ))}
+                {members.map((m) => {
+                  const isSel = person === m.handle;
+                  return (
+                    <button
+                      key={m.userId}
+                      onClick={() => setPerson(isSel ? 'all' : m.handle)}
+                      className={`w-full py-1.5 px-3 rounded-lg border text-left transition-all cursor-pointer flex items-center justify-between ${
+                        isSel
+                          ? 'bg-white/[0.08] border-white/20 text-white'
+                          : 'bg-white/[0.02] border-white/[0.04] text-white/60 hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      <span className="truncate">{m.handle}</span>
+                      <span className="text-[10px] text-white/30 uppercase">{m.role}</span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
 
-          {/* Agents */}
-          <div className="rounded-xl border border-white/[0.06] bg-[#111111] p-4">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30 mb-3">Agent Adapters</p>
-            <div className="space-y-1">
+          {/* Filter by Agent Adapter */}
+          <div>
+            <span className="text-white/40 text-[10px] tracking-wider uppercase font-semibold block mb-2 px-1">
+              Agent Adapters
+            </span>
+            <div className="flex flex-col gap-1">
               {[
-                { key: 'all', label: 'All agents' },
-                { key: 'claude', label: 'Claude Code' },
-                { key: 'cursor', label: 'Cursor' },
-                { key: 'codex', label: 'Codex' }
-              ].map(({ key, label }) => (
+                { id: 'all', label: 'All agents' },
+                { id: 'claude', label: 'Claude Code' },
+                { id: 'cursor', label: 'Cursor' },
+                { id: 'codex', label: 'Codex' },
+              ].map(({ id, label }) => (
                 <button
-                  key={key}
-                  onClick={() => setAgent(key)}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-mono transition-all ${
-                    agent === key
-                      ? 'bg-white/[0.08] text-white font-medium'
-                      : 'text-white/40 hover:bg-white/[0.04] hover:text-white/70'
+                  key={id}
+                  onClick={() => setAgent(id)}
+                  className={`w-full py-1.5 px-3 rounded-lg border text-left transition-all cursor-pointer ${
+                    agent === id
+                      ? 'bg-white/[0.08] border-white/20 text-white font-medium'
+                      : 'bg-white/[0.02] border-white/[0.04] text-white/60 hover:bg-white/[0.06]'
                   }`}
                 >
                   {label}
@@ -633,14 +676,14 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* CLI Reference Widget */}
-          <div className="rounded-xl border border-white/[0.06] bg-[#111111] p-4 space-y-2">
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30">
+          {/* CLI Helper Section */}
+          <div className="pt-2 border-t border-white/[0.06]">
+            <span className="text-white/40 text-[10px] tracking-wider uppercase font-semibold block mb-2 px-1">
               Terminal Help
-            </p>
+            </span>
             <button
               onClick={() => setShowCliModal(true)}
-              className="w-full py-2 px-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-400 text-xs font-mono font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              className="w-full py-2 px-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-400 text-xs font-mono transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <span>⚡</span>
               <span>CLI Cheat Sheet</span>
@@ -648,19 +691,13 @@ export default function DashboardPage() {
           </div>
         </aside>
 
-        {/* Main feed */}
+        {/* Center / Feed Area */}
         <main className="flex-1 flex flex-col gap-4 min-w-0">
-          {/* Mobile Filter & Workspace Bar (Visible on mobile/tablet only) */}
-          <div className="md:hidden flex items-center justify-between p-3 rounded-xl bg-[#111111] border border-white/[0.08] text-xs font-mono">
-            <div className="flex items-center gap-2 min-w-0 truncate">
-              <span className="text-white/40 shrink-0">Team:</span>
-              <span className="text-white font-medium truncate">{activeTeam?.name || 'Workspace'}</span>
-              {agent !== 'all' && (
-                <span className="px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-[10px] shrink-0">
-                  {agent}
-                </span>
-              )}
-            </div>
+          {/* Mobile Filter Toggle Bar (visible only on < md) */}
+          <div className="md:hidden flex items-center justify-between p-2 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs">
+            <span className="text-white/60 font-mono truncate">
+              {viewMode === 'vault' ? '📁 My Vault' : (activeTeam ? `🏢 ${activeTeam.name}` : 'No Workspace')}
+            </span>
             <button
               onClick={() => setShowMobileSidebar(true)}
               className="px-2.5 py-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-white/90 text-xs font-sans font-medium flex items-center gap-1.5 shrink-0 transition-colors cursor-pointer"
@@ -744,20 +781,20 @@ export default function DashboardPage() {
 
           {/* Quick Promote / Workspace helper banner */}
           {viewMode === 'vault' ? (
-            <div className="p-3.5 rounded-xl border border-emerald-500/20 bg-emerald-950/20 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs font-mono">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-emerald-400 font-bold shrink-0">🔒</span>
+            <div className="p-3.5 rounded-xl border border-emerald-500/20 bg-emerald-950/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
+              <div className="flex items-center gap-2">
+                <span className="text-emerald-400 font-bold">🔒</span>
                 <span className="text-white/80 font-sans">
                   <strong>Personal Context Vault:</strong> Your previous context records stay preserved here even if team workspaces change or expire.
                 </span>
               </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <code className="text-[11px] text-emerald-300 bg-black/60 px-2.5 py-1.5 rounded-md border border-emerald-500/20 select-all">
+              <div className="flex items-center gap-2">
+                <code className="text-[11px] text-emerald-300 bg-black/60 px-2.5 py-1 rounded-md border border-emerald-500/20 select-all truncate">
                   agentrelay daemon
                 </code>
                 <button
                   onClick={() => setShowCliModal(true)}
-                  className="h-7 px-2.5 rounded bg-white/[0.06] hover:bg-white/[0.12] text-white/70 hover:text-white text-xs font-sans transition-colors cursor-pointer"
+                  className="px-2 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] text-white/70 text-[10px] shrink-0 cursor-pointer"
                 >
                   CLI Guide
                 </button>
@@ -790,7 +827,7 @@ export default function DashboardPage() {
           )}
 
           {/* Cards or Empty State */}
-          {loading ? (
+          {(viewMode === 'vault' ? myRecordsLoading : loading) ? (
             <div className="flex-1 flex flex-col items-center justify-center py-20 text-center">
               <p className="text-xs text-white/40 animate-pulse">Loading context records from LCP server...</p>
             </div>
@@ -800,37 +837,44 @@ export default function DashboardPage() {
                 📁
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-white/90">No context records in this workspace yet</h3>
+                <h3 className="text-sm font-semibold text-white/90">
+                  {viewMode === 'vault' ? 'No context records in your personal vault yet' : 'No context records in this workspace yet'}
+                </h3>
                 <p className="text-xs text-white/40 mt-1 max-w-md mx-auto">
-                  Add code context from your terminal, or join another team workspace using an invite token.
+                  {viewMode === 'vault'
+                    ? 'Run the AgentRelay daemon locally to capture your sessions into your personal vault.'
+                    : 'Add code context from your terminal, or join another team workspace using an invite token.'}
                 </p>
               </div>
 
-              <div className="w-full max-w-lg p-3 rounded-xl bg-black/60 border border-white/[0.08] font-mono text-xs text-left space-y-1 text-emerald-400">
-                <div className="text-white/40 text-[10px]"># 1. Scope project & capture session</div>
-                <div>agentrelay scope add ~/your-repo</div>
-                <div className="text-white/40 text-[10px] pt-1"># 2. Promote record into this team workspace</div>
-                <div>agentrelay promote &lt;recordId&gt; --team {activeTeam?.id || '&lt;teamId&gt;'}</div>
+              {/* Terminal Instructions Helper */}
+              <div className="p-4 rounded-xl bg-black/60 border border-white/[0.06] text-left font-mono text-xs max-w-lg w-full space-y-2">
+                <div className="text-white/40 text-[11px]"># 1. Scope project & capture session</div>
+                <div className="text-emerald-400">agentrelay scope add ~/your-repo</div>
+                <div className="text-white/40 text-[11px] pt-1"># 2. Promote record into this team workspace</div>
+                <div className="text-emerald-400">
+                  agentrelay promote &lt;recordId&gt; --team {activeTeam ? activeTeam.id : '&lt;teamId&gt;'}
+                </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
+              <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
                 <button
                   onClick={() => setShowJoinModal(true)}
-                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/20 transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/25 hover:bg-cyan-500/20 text-cyan-300 text-xs font-mono font-medium transition-colors flex items-center gap-2 cursor-pointer"
                 >
                   <span>🔗</span>
                   <span>Join Team with Token</span>
                 </button>
                 <button
                   onClick={() => setShowCreateTeamModal(true)}
-                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-white/[0.06] border border-white/[0.1] text-white hover:bg-white/[0.12] transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.10] text-white/80 hover:text-white text-xs font-mono font-medium transition-colors flex items-center gap-2 cursor-pointer"
                 >
                   <span>+</span>
                   <span>Create New Team</span>
                 </button>
                 <button
                   onClick={() => setShowCliModal(true)}
-                  className="px-3.5 py-2 rounded-xl text-xs font-mono bg-white text-black hover:bg-white/90 transition-colors flex items-center gap-1.5 cursor-pointer font-bold"
+                  className="px-4 py-2 rounded-xl bg-white text-black hover:bg-white/90 text-xs font-mono font-medium transition-colors flex items-center gap-2 cursor-pointer"
                 >
                   <span>⚡</span>
                   <span>CLI Commands Reference</span>
@@ -838,55 +882,69 @@ export default function DashboardPage() {
               </div>
             </div>
           ) : (
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 gap-4">
               {filtered.map((s) => (
-                <TiltCard
-                  key={s.id}
-                  maxTilt={3}
-                  spotlightColor="rgba(200,200,210,0.07)"
-                  onClick={() => navigate(`/sessions/${s.id}?teamId=${activeTeam?.id}`)}
-                  className="rounded-xl border border-white/[0.07] bg-[#111111] hover:border-white/[0.15] hover:bg-[#161616] transition-all duration-200 cursor-pointer group"
-                >
-                  <div className="p-5">
-                    <div className="flex items-center justify-between mb-2.5">
-                      <div className="flex items-center gap-2.5">
-                        <span className="px-2 py-0.5 rounded text-[11px] font-mono text-emerald-400 bg-emerald-950/40 border border-emerald-500/20">
-                          {s.agent}
-                        </span>
-                        <span className="text-xs text-white/50 font-mono">
-                          {s.user}
-                        </span>
-                        <span className="text-[11px] text-white/25">
+                <TiltCard key={s.id}>
+                  <div
+                    onClick={() => navigate(`/sessions/${s.id}`)}
+                    className="p-5 flex flex-col gap-3 group cursor-pointer"
+                  >
+                    {/* Top Row: User Avatar & Session Title */}
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <img
+                          src={s.avatar}
+                          alt={s.userName}
+                          className="w-8 h-8 rounded-lg bg-white/[0.05] border border-white/[0.08] shrink-0"
+                        />
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-semibold text-white/90 group-hover:text-cyan-400 transition-colors truncate">
+                            {s.title}
+                          </h3>
+                          <div className="flex items-center gap-2 text-xs text-white/40 mt-0.5">
+                            <span>{s.userName}</span>
+                            <span>•</span>
+                            <span className="font-mono text-[11px] text-white/30">{s.agent}</span>
+                            <span>•</span>
+                            <span>{s.timestamp}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right Meta Badges */}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {s.sensitivity && s.sensitivity !== 'none' && (
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-mono border uppercase tracking-wider ${
+                              s.sensitivity === 'restricted'
+                                ? 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                                : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                            }`}
+                          >
+                            {s.sensitivity}
+                          </span>
+                        )}
+                        <span className="px-2 py-0.5 rounded bg-white/[0.04] border border-white/[0.06] text-[11px] font-mono text-white/40">
                           {s.duration}
                         </span>
                       </div>
-                      <span className="text-[11px] text-white/30 font-mono">
-                        {s.timestamp}
-                      </span>
                     </div>
 
-                    <h2 className="text-sm font-semibold text-white/90 group-hover:text-white transition-colors mb-1.5">
-                      {s.title}
-                    </h2>
-
-                    <p className="text-xs text-white/50 line-clamp-2 leading-relaxed mb-3">
+                    {/* Summary */}
+                    <p className="text-xs text-white/60 line-clamp-2 leading-relaxed">
                       {s.summary}
                     </p>
 
-                    {/* Record ID & Terminal promote actions */}
-                    <div className="my-2.5 p-2 rounded-lg bg-black/50 border border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs font-mono">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-white/30 text-[10px] uppercase tracking-wider shrink-0">Record ID:</span>
-                        <code className="text-cyan-300 font-semibold select-all text-[11px] truncate max-w-[200px] sm:max-w-none">{s.id}</code>
-                      </div>
-                      <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+                    {/* Quick Record Actions */}
+                    <div className="flex items-center justify-between pt-1">
+                      <div className="flex items-center gap-1.5">
                         <button
                           onClick={(e) => handleCopyRecordId(e, s.id)}
-                          className="h-6 px-2 rounded bg-white/[0.06] hover:bg-white/[0.12] text-white/70 hover:text-white text-[10px] transition-colors cursor-pointer flex items-center gap-1"
-                          title="Copy Record ID"
+                          className="h-6 px-2 rounded bg-white/[0.04] hover:bg-white/[0.08] text-white/50 hover:text-white text-[10px] font-mono border border-white/[0.06] transition-colors cursor-pointer flex items-center gap-1"
+                          title="Copy full Record ID to clipboard"
                         >
                           <span>{copiedRecordId === s.id ? '✓' : '📋'}</span>
-                          <span>{copiedRecordId === s.id ? 'Copied' : 'Copy ID'}</span>
+                          <span>{copiedRecordId === s.id ? 'ID Copied' : `id:${s.id.slice(0, 8)}…`}</span>
                         </button>
                         <button
                           onClick={(e) => handleCopyPromoteCmd(e, s.id)}
@@ -971,34 +1029,30 @@ export default function DashboardPage() {
               </button>
             </div>
 
-            {/* Filter pills */}
-            <div className="flex items-center gap-2">
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-2 font-mono text-xs">
               {['all', 'pending', 'read'].map((f) => (
                 <button
                   key={f}
                   onClick={() => setInboxFilter(f)}
-                  className={`px-3 py-1 rounded-lg text-xs font-mono capitalize transition-all cursor-pointer ${
+                  className={`px-3 py-1 rounded-lg border capitalize cursor-pointer transition-colors ${
                     inboxFilter === f
-                      ? 'bg-white/[0.12] text-white font-semibold'
-                      : 'text-white/40 hover:bg-white/[0.04] hover:text-white/70'
+                      ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-300 font-medium'
+                      : 'bg-white/[0.02] border-white/[0.06] text-white/50 hover:bg-white/[0.06]'
                   }`}
                 >
-                  {f} {f === 'pending' && pendingInboxCount > 0 ? `(${pendingInboxCount})` : ''}
+                  {f}
                 </button>
               ))}
             </div>
 
-            {/* List */}
-            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+            {/* Inbox List */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[200px]">
               {inboxItems
                 .filter((item) => (inboxFilter === 'all' ? true : item.state === inboxFilter))
                 .length === 0 ? (
-                <div className="py-12 text-center text-xs text-white/30 space-y-2">
-                  <p className="text-2xl opacity-40">📭</p>
-                  <p>No handoff items in this category.</p>
-                  <p className="text-[11px] text-white/20">
-                    When a teammate runs <code className="text-cyan-400">agentrelay handoff &lt;recordId&gt; @{user?.handle?.replace('@', '') || 'you'}</code>, it will appear here.
-                  </p>
+                <div className="text-center py-12 text-white/30 text-xs font-mono">
+                  No {inboxFilter !== 'all' ? inboxFilter : ''} handoffs in your inbox.
                 </div>
               ) : (
                 inboxItems
@@ -1006,62 +1060,36 @@ export default function DashboardPage() {
                   .map((item) => (
                     <div
                       key={item.id}
-                      className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-white/[0.12] transition-colors space-y-2"
+                      className="p-3.5 rounded-xl border border-white/[0.06] bg-[#181818] flex items-start justify-between gap-3 text-xs"
                     >
-                      <div className="flex items-center justify-between text-xs">
-                        <div className="flex items-center gap-2 font-mono">
-                          <span className="text-cyan-400 font-semibold">{item.fromHandle}</span>
-                          <span className="text-white/30">→ you in</span>
-                          <span className="text-white/60 bg-white/[0.05] px-1.5 py-0.5 rounded text-[10px]">
-                            {item.teamName}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 font-mono text-[11px]">
+                          <span className="text-cyan-400">@{item.senderHandle || 'teammate'}</span>
+                          <span className="text-white/30">→ you</span>
                           <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-mono uppercase ${
+                            className={`px-1.5 py-0.2 rounded text-[10px] ${
                               item.state === 'pending'
-                                ? 'bg-amber-950/40 text-amber-300 border border-amber-500/20'
-                                : 'bg-white/[0.04] text-white/40'
+                                ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                : 'bg-white/[0.04] text-white/40 border border-white/[0.06]'
                             }`}
                           >
                             {item.state}
                           </span>
-                          <span className="text-[10px] font-mono text-white/30">
-                            {new Date(item.createdAt).toLocaleDateString()}
-                          </span>
+                        </div>
+                        <p className="text-white/70 font-sans">{item.message || 'Shared a context record with you.'}</p>
+                        <div className="font-mono text-[10px] text-white/30">
+                          Record: {item.recordId?.slice(0, 16)}…
                         </div>
                       </div>
 
-                      <div>
-                        <h4 className="text-xs font-semibold text-white/90">
-                          {item.record?.title || 'Shared Context Record'}
-                        </h4>
-                        {item.record?.summary && (
-                          <p className="text-[11px] text-white/50 line-clamp-2 mt-0.5">
-                            {item.record.summary}
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.04]">
-                        {item.state === 'pending' && (
-                          <button
-                            onClick={() => handleMarkRead(item.id)}
-                            className="px-2.5 py-1 rounded text-[11px] font-mono text-white/50 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] transition-colors cursor-pointer"
-                          >
-                            Mark Read
-                          </button>
-                        )}
+                      {item.state === 'pending' && (
                         <button
-                          onClick={() => {
-                            setShowInboxModal(false);
-                            navigate(`/sessions/${item.recordId}?teamId=${item.teamId}`);
-                          }}
-                          className="px-3 py-1 rounded text-[11px] font-mono font-semibold bg-white text-black hover:bg-white/90 transition-colors cursor-pointer"
+                          onClick={() => handleMarkInboxRead(item.id)}
+                          className="px-2.5 py-1 rounded bg-white/[0.05] hover:bg-white/[0.1] text-white/70 text-[11px] font-mono shrink-0 cursor-pointer transition-colors"
                         >
-                          View Context →
+                          Mark Read
                         </button>
-                      </div>
+                      )}
                     </div>
                   ))
               )}
@@ -1073,262 +1101,217 @@ export default function DashboardPage() {
       {/* ── Audit Trail Modal ─────────────────────────────────────────────────── */}
       {showAuditModal && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="w-full max-w-3xl max-h-[85vh] rounded-2xl border border-white/[0.1] bg-[#121212] p-6 shadow-2xl flex flex-col space-y-4">
+          <div className="w-full max-w-2xl max-h-[85vh] rounded-2xl border border-white/[0.1] bg-[#121212] p-6 shadow-2xl flex flex-col space-y-4">
             <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
               <div className="flex items-center gap-2.5">
                 <span className="text-xl">🛡️</span>
                 <div>
-                  <h3 className="text-sm font-semibold text-white">Tamper-Evident Audit Trail</h3>
-                  <p className="text-[11px] font-mono text-white/40">SHA-256 Hash Chain Integrity (PRD §14.2, §20)</p>
+                  <h3 className="text-sm font-semibold text-white">Cryptographic Audit Trail</h3>
+                  <p className="text-[11px] font-mono text-white/40">SHA-256 Hash Chain Integrity Verification</p>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleVerifyAuditChain}
-                  disabled={auditLoading}
-                  className="px-3 py-1.5 rounded-lg text-xs font-mono font-semibold bg-emerald-500 hover:bg-emerald-400 text-black transition-colors disabled:opacity-50 cursor-pointer"
-                >
-                  {auditLoading ? 'Verifying…' : 'Verify SHA-256 Chain'}
-                </button>
-                <button
-                  onClick={() => setShowAuditModal(false)}
-                  className="text-white/40 hover:text-white text-sm cursor-pointer ml-2"
-                >
-                  ✕
-                </button>
-              </div>
+              <button
+                onClick={() => {
+                  setShowAuditModal(false);
+                  setAuditVerifyResult(null);
+                }}
+                className="text-white/40 hover:text-white text-sm cursor-pointer"
+              >
+                ✕
+              </button>
             </div>
 
-            {/* Verification Result Banner */}
+            {/* Verify Chain Action Bar */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-white/[0.02] border border-white/[0.06]">
+              <span className="text-xs text-white/60 font-mono">Verify whole chain across all team mutations</span>
+              <button
+                onClick={handleVerifyAudit}
+                className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/25 hover:bg-emerald-500/20 text-emerald-300 text-xs font-mono font-medium transition-colors cursor-pointer"
+              >
+                Verify Audit Chain
+              </button>
+            </div>
+
+            {/* Verification result badge */}
             {auditVerifyResult && (
               <div
-                className={`p-3.5 rounded-xl border text-xs font-mono ${
+                className={`p-3 rounded-xl border text-xs font-mono ${
                   auditVerifyResult.valid
-                    ? 'bg-emerald-950/40 border-emerald-500/30 text-emerald-300'
-                    : 'bg-rose-950/40 border-rose-500/30 text-rose-300'
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                    : 'bg-rose-500/10 border-rose-500/30 text-rose-400'
                 }`}
               >
-                {auditVerifyResult.valid ? (
-                  <div>
-                    <div className="font-bold flex items-center gap-1.5">
-                      <span>✔</span> Cryptographic Audit Trail Intact
-                    </div>
-                    <div className="text-[11px] text-white/50 mt-1">
-                      Verified {auditVerifyResult.checked} chained event(s). Head hash:{' '}
-                      <code className="text-emerald-400 select-all">{auditVerifyResult.headHash?.slice(0, 24)}…</code>
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <div className="font-bold">❌ Integrity Compromised</div>
-                    <div className="text-[11px] mt-1">
-                      Reason: {auditVerifyResult.brokenAt?.reason} at sequence #{auditVerifyResult.brokenAt?.seq} (ID: {auditVerifyResult.brokenAt?.id})
-                    </div>
-                  </div>
-                )}
+                {auditVerifyResult.valid
+                  ? `✓ Cryptographic Audit Chain Valid (${auditVerifyResult.verifiedCount || auditEvents.length} events verified, 0 broken links)`
+                  : `✗ Chain Tampering Detected: ${auditVerifyResult.error || 'Hash mismatch in audit sequence'}`}
               </div>
             )}
 
-            {auditError && (
-              <div className="p-3 rounded-lg bg-rose-950/40 border border-rose-500/25 text-rose-300 text-xs">
-                {auditError}
-              </div>
-            )}
-
-            {/* Event Log Table */}
-            <div className="flex-1 overflow-y-auto overflow-x-auto pr-1">
-              {auditEvents.length === 0 ? (
-                <div className="py-12 text-center text-xs text-white/30">
-                  {auditLoading ? 'Loading audit trail…' : 'No audit events recorded for this team.'}
+            {/* Event list */}
+            <div className="flex-1 overflow-y-auto space-y-2 pr-1 min-h-[240px]">
+              {auditLoading ? (
+                <div className="text-center py-12 text-white/30 text-xs font-mono animate-pulse">
+                  Loading cryptographic events...
+                </div>
+              ) : auditError ? (
+                <div className="text-center py-12 text-rose-400/80 text-xs font-mono">
+                  Failed to load audit events: {auditError}
+                </div>
+              ) : auditEvents.length === 0 ? (
+                <div className="text-center py-12 text-white/30 text-xs font-mono">
+                  No audit events recorded for this workspace yet.
                 </div>
               ) : (
-                <table className="w-full text-left text-xs font-mono min-w-[500px]">
-                  <thead>
-                    <tr className="border-b border-white/[0.08] text-[10px] uppercase text-white/30">
-                      <th className="py-2 px-2">Seq</th>
-                      <th className="py-2 px-2">Action</th>
-                      <th className="py-2 px-2">Actor</th>
-                      <th className="py-2 px-2">Record ID</th>
-                      <th className="py-2 px-2">Time</th>
-                      <th className="py-2 px-2">Hash</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-white/[0.04]">
-                    {auditEvents.map((ev) => (
-                      <tr key={ev.id} className="hover:bg-white/[0.02]">
-                        <td className="py-2 px-2 text-white/30">#{ev.seq}</td>
-                        <td className="py-2 px-2">
-                          <span
-                            className={`px-1.5 py-0.5 rounded text-[10px] ${
-                              ev.action.includes('promote')
-                                ? 'bg-emerald-950/50 text-emerald-300 border border-emerald-500/20'
-                                : ev.action.includes('handoff')
-                                ? 'bg-cyan-950/50 text-cyan-300 border border-cyan-500/20'
-                                : ev.action.includes('withdraw')
-                                ? 'bg-rose-950/50 text-rose-300 border border-rose-500/20'
-                                : 'bg-white/[0.05] text-white/60'
-                            }`}
-                          >
-                            {ev.action}
-                          </span>
-                        </td>
-                        <td className="py-2 px-2 text-white/80">{ev.actorHandle || ev.actorId?.slice(0, 8)}</td>
-                        <td className="py-2 px-2 text-white/40 truncate max-w-[120px]">{ev.recordId || '—'}</td>
-                        <td className="py-2 px-2 text-white/30 text-[10px]">{new Date(ev.ts).toLocaleTimeString()}</td>
-                        <td className="py-2 px-2 text-white/20 text-[10px] truncate max-w-[80px]" title={ev.hash}>
-                          {ev.hash ? ev.hash.slice(0, 8) + '…' : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                auditEvents.map((evt) => (
+                  <div
+                    key={evt.id}
+                    className="p-3 rounded-xl border border-white/[0.05] bg-[#161616] font-mono text-[11px] space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between text-white/40">
+                      <span className="text-emerald-400 font-semibold">{evt.action}</span>
+                      <span>{new Date(evt.ts).toLocaleString()}</span>
+                    </div>
+                    <div className="text-white/60 break-all text-[10px]">
+                      hash: <span className="text-cyan-400/80">{evt.eventHash?.slice(0, 32)}…</span>
+                    </div>
+                    <div className="text-white/30 break-all text-[10px]">
+                      prev: {evt.prevHash ? `${evt.prevHash.slice(0, 32)}…` : '00000000000000000000000000000000 (genesis)'}
+                    </div>
+                  </div>
+                ))
               )}
             </div>
           </div>
         </div>
       )}
 
-      {/* Mobile Sidebar Drawer (Slide-over on < md screens) */}
+      {/* ── Slide-over Mobile Navigation Drawer ───────────────────────────────── */}
       {showMobileSidebar && (
-        <div className="fixed inset-0 z-50 md:hidden bg-black/80 backdrop-blur-xs flex">
-          <div className="w-full max-w-xs bg-[#111111] border-r border-white/[0.1] h-full flex flex-col p-5 overflow-y-auto space-y-5 shadow-2xl animate-fadeIn">
-            <div className="flex items-center justify-between pb-3 border-b border-white/[0.08]">
-              <div className="flex items-center gap-2">
-                <span className="text-base">🏢</span>
-                <h3 className="text-sm font-semibold text-white">Workspaces & Filters</h3>
-              </div>
+        <div className="fixed inset-0 z-50 md:hidden flex">
+          <div className="w-72 max-w-[80vw] bg-[#0E0E0E] border-r border-white/[0.08] p-5 flex flex-col gap-5 overflow-y-auto shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/[0.06] pb-3">
+              <span className="font-semibold text-sm text-white/90">Navigation & Filters</span>
               <button
                 onClick={() => setShowMobileSidebar(false)}
-                className="text-white/40 hover:text-white p-1 rounded-lg hover:bg-white/[0.06] text-sm cursor-pointer"
+                className="text-white/40 hover:text-white text-base cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
+            {/* Mode Switcher */}
+            <div>
+              <span className="text-white/40 text-[10px] tracking-wider uppercase font-semibold block mb-2">
+                View Mode
+              </span>
+              <div className="flex flex-col gap-1.5">
+                <button
+                  onClick={() => {
+                    setViewMode('vault');
+                    localStorage.setItem('ar_view_mode', 'vault');
+                    fetchMyRecords();
+                    setShowMobileSidebar(false);
+                  }}
+                  className={`w-full py-2 px-3 rounded-lg border text-left text-xs font-mono transition-all cursor-pointer flex items-center justify-between ${
+                    viewMode === 'vault'
+                      ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 font-semibold'
+                      : 'bg-white/[0.02] border-white/[0.04] text-white/60 hover:text-white'
+                  }`}
+                >
+                  <span>📁 My Context Records</span>
+                  <span className="text-[10px] opacity-60">({myRecords.length})</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setViewMode('team');
+                    localStorage.setItem('ar_view_mode', 'team');
+                    setShowMobileSidebar(false);
+                  }}
+                  className={`w-full py-2 px-3 rounded-lg border text-left text-xs font-mono transition-all cursor-pointer flex items-center justify-between ${
+                    viewMode === 'team'
+                      ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300 font-semibold'
+                      : 'bg-white/[0.02] border-white/[0.04] text-white/60 hover:text-white'
+                  }`}
+                >
+                  <span>👥 Team Workspaces</span>
+                  <span className="text-[10px] opacity-60">({teams.length})</span>
+                </button>
+              </div>
+            </div>
+
             {/* Workspaces */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-white/40 text-[10px] tracking-wider uppercase font-semibold">
                   Workspaces ({teams.length})
-                </p>
-                <div className="flex items-center gap-1">
+                </span>
+                <div className="flex items-center gap-1.5">
                   <button
                     onClick={() => {
                       setShowMobileSidebar(false);
                       setShowJoinModal(true);
                     }}
-                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 transition-colors"
+                    className="text-[10px] text-cyan-400 cursor-pointer"
                   >
                     Join
                   </button>
+                  <span className="text-white/20">•</span>
                   <button
                     onClick={() => {
                       setShowMobileSidebar(false);
                       setShowCreateTeamModal(true);
                     }}
-                    className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.05] text-white/70 hover:bg-white/[0.1]"
+                    className="text-[10px] text-white/60 cursor-pointer"
                   >
                     + New
                   </button>
                 </div>
               </div>
-              <div className="space-y-1">
+              <div className="flex flex-col gap-1 max-h-40 overflow-y-auto">
                 {teams.map((t) => (
-                  <div
-                    key={t.id}
-                    className={`flex items-center justify-between rounded-lg px-2.5 py-1.5 transition-all ${
-                      activeTeam?.id === t.id
-                        ? 'bg-white/[0.08] text-white font-medium'
-                        : 'text-white/40 hover:bg-white/[0.04] hover:text-white/70'
-                    }`}
-                  >
-                    <button
-                      onClick={() => {
-                        setActiveTeam(t);
-                        localStorage.setItem('ar_active_team_id', t.id);
-                        setShowMobileSidebar(false);
-                      }}
-                      className="flex-1 text-left text-xs truncate flex items-center justify-between cursor-pointer mr-1"
-                    >
-                      <span className="truncate">{t.name}</span>
-                      {activeTeam?.id === t.id && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 ml-1" />
-                      )}
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteTeam(t);
-                      }}
-                      className="text-white/30 hover:text-rose-400 p-0.5 rounded text-[11px]"
-                      title={`Delete workspace "${t.name}"`}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Team Members */}
-            <div className="space-y-3 pt-3 border-t border-white/[0.06]">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30">
-                Team Members ({members.length})
-              </p>
-              <div className="space-y-1">
-                <button
-                  onClick={() => {
-                    setPerson('all');
-                    setShowMobileSidebar(false);
-                  }}
-                  className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-all ${
-                    person === 'all'
-                      ? 'bg-white/[0.08] text-white font-medium'
-                      : 'text-white/40 hover:bg-white/[0.04] hover:text-white/70'
-                  }`}
-                >
-                  All Teammates
-                </button>
-                {members.map((m) => (
                   <button
-                    key={m.id}
+                    key={t.id}
                     onClick={() => {
-                      setPerson(m.handle);
+                      setActiveTeam(t);
+                      setViewMode('team');
+                      localStorage.setItem('ar_view_mode', 'team');
+                      localStorage.setItem('ar_active_team_id', t.id);
                       setShowMobileSidebar(false);
                     }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs transition-all flex items-center justify-between ${
-                      person === m.handle
-                        ? 'bg-white/[0.08] text-white font-medium'
-                        : 'text-white/40 hover:bg-white/[0.04] hover:text-white/70'
+                    className={`w-full py-1.5 px-2.5 rounded-lg border text-left text-xs font-mono truncate transition-all cursor-pointer ${
+                      activeTeam?.id === t.id && viewMode === 'team'
+                        ? 'bg-cyan-500/10 border-cyan-500/30 text-cyan-400 font-medium'
+                        : 'bg-white/[0.02] border-white/[0.04] text-white/60 hover:text-white'
                     }`}
                   >
-                    <span className="truncate">{m.handle}</span>
-                    <span className="text-[10px] font-mono text-white/20 uppercase">{m.role}</span>
+                    {t.name}
                   </button>
                 ))}
               </div>
             </div>
 
             {/* Agent Adapters */}
-            <div className="space-y-3 pt-3 border-t border-white/[0.06]">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-white/30">Agent Adapters</p>
-              <div className="space-y-1">
+            <div>
+              <span className="text-white/40 text-[10px] tracking-wider uppercase font-semibold block mb-2">
+                Agent Adapters
+              </span>
+              <div className="flex flex-col gap-1">
                 {[
-                  { key: 'all', label: 'All agents' },
-                  { key: 'claude', label: 'Claude Code' },
-                  { key: 'cursor', label: 'Cursor' },
-                  { key: 'codex', label: 'Codex' }
-                ].map(({ key, label }) => (
+                  { id: 'all', label: 'All agents' },
+                  { id: 'claude', label: 'Claude Code' },
+                  { id: 'cursor', label: 'Cursor' },
+                  { id: 'codex', label: 'Codex' },
+                ].map(({ id, label }) => (
                   <button
-                    key={key}
+                    key={id}
                     onClick={() => {
-                      setAgent(key);
+                      setAgent(id);
                       setShowMobileSidebar(false);
                     }}
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-mono transition-all ${
-                      agent === key
-                        ? 'bg-white/[0.08] text-white font-medium'
-                        : 'text-white/40 hover:bg-white/[0.04] hover:text-white/70'
+                    className={`w-full py-1.5 px-2.5 rounded-lg border text-left text-xs font-mono transition-all cursor-pointer ${
+                      agent === id
+                        ? 'bg-white/[0.08] border-white/20 text-white font-medium'
+                        : 'bg-white/[0.02] border-white/[0.04] text-white/60 hover:text-white'
                     }`}
                   >
                     {label}
