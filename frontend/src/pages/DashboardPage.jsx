@@ -15,6 +15,8 @@ import {
   markInboxRead,
   listAuditTrail,
   verifyAuditTrail,
+  listMyRecords,
+  shareRecordToTeam,
 } from '../lib/api';
 
 export default function DashboardPage() {
@@ -35,6 +37,81 @@ export default function DashboardPage() {
   const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
   const [copiedRecordId, setCopiedRecordId] = useState(null);
   const [copiedPromoteCmd, setCopiedPromoteCmd] = useState(null);
+
+  // View Mode: 'team' (shared workspace feed) vs 'vault' (personal context records)
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('ar_view_mode') || 'team');
+  const [myRecords, setMyRecords] = useState([]);
+  const [myRecordsLoading, setMyRecordsLoading] = useState(false);
+  const [targetShareTeam, setTargetShareTeam] = useState({});
+  const [sharingStatus, setSharingStatus] = useState({});
+
+  const formatRecord = (r) => {
+    const rec = r.record || r;
+    const content = rec.content || {};
+    const author = rec.author || {};
+    const source = rec.source || {};
+
+    return {
+      id: rec.recordId || r.recordId,
+      title: content.title || 'Untitled Session',
+      summary: content.summary || 'Context record summary',
+      agent: source.agent || 'Claude Code',
+      user: author.handle || '@developer',
+      userName: author.handle || 'Teammate',
+      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${author.handle || 'user'}`,
+      duration: `${rec.source?.eventRange ? rec.source.eventRange[1] - rec.source.eventRange[0] : 15} events`,
+      timestamp: rec.times?.createdAt ? new Date(rec.times.createdAt).toLocaleDateString() : 'Recently',
+      filesCount: (content.filesTouched || []).length,
+      decisionsCount: (content.decisions || []).length,
+      sensitivity: rec.sensitivity?.label || 'none',
+      projectTag: rec.acl?.projectTag || source.projectTag || 'shared',
+      teamName: r.teamName || r.team_name,
+      teamId: r.teamId || r.team_id,
+      raw: rec
+    };
+  };
+
+  const fetchMyRecords = async () => {
+    try {
+      setMyRecordsLoading(true);
+      const raw = await listMyRecords();
+      const formatted = raw
+        .filter(r => !r.isWithdrawn && !r.withdrawn)
+        .map(formatRecord);
+      setMyRecords(formatted);
+    } catch (e) {
+      console.warn('Failed to fetch personal records:', e.message);
+    } finally {
+      setMyRecordsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMyRecords();
+  }, []);
+
+  const handleShareToTeam = async (e, recordId, targetTeamId) => {
+    e.stopPropagation();
+    if (!targetTeamId) {
+      alert('Please select a team workspace first.');
+      return;
+    }
+    setSharingStatus(prev => ({ ...prev, [recordId]: 'sharing' }));
+    try {
+      await shareRecordToTeam(targetTeamId, recordId);
+      setSharingStatus(prev => ({ ...prev, [recordId]: 'done' }));
+      setTimeout(() => {
+        setSharingStatus(prev => ({ ...prev, [recordId]: null }));
+      }, 3000);
+      if (activeTeam?.id === targetTeamId) {
+        const teamRecs = await listRecords(targetTeamId);
+        setRecords(teamRecs.filter(r => !r.isWithdrawn && !r.withdrawn).map(formatRecord));
+      }
+    } catch (err) {
+      alert('Failed to share record: ' + (err.response?.data?.error?.message || err.message));
+      setSharingStatus(prev => ({ ...prev, [recordId]: null }));
+    }
+  };
 
   const [search, setSearch] = useState('');
   const [person, setPerson] = useState('all');
@@ -159,34 +236,7 @@ export default function DashboardPage() {
         if (!isMounted) return;
 
         setMembers(memberList);
-        // Map raw LCP server records into display items
-        const formatted = recordList
-          .filter(r => !r.isWithdrawn && !r.withdrawn)
-          .map(r => {
-            const rec = r.record || r;
-            const content = rec.content || {};
-            const author = rec.author || {};
-            const source = rec.source || {};
-
-            return {
-              id: rec.recordId || r.recordId,
-              title: content.title || 'Untitled Session',
-              summary: content.summary || 'Context record summary',
-              agent: source.agent || 'Claude Code',
-              user: author.handle || '@developer',
-              userName: author.handle || 'Teammate',
-              avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${author.handle || 'user'}`,
-              duration: `${rec.source?.eventRange ? rec.source.eventRange[1] - rec.source.eventRange[0] : 15} events`,
-              timestamp: rec.times?.createdAt ? new Date(rec.times.createdAt).toLocaleDateString() : 'Recently',
-              filesCount: (content.filesTouched || []).length,
-              decisionsCount: (content.decisions || []).length,
-              sensitivity: rec.sensitivity?.label || 'none',
-              projectTag: rec.acl?.projectTag || source.projectTag || 'shared',
-              raw: rec
-            };
-          });
-
-        setRecords(formatted);
+        setRecords(recordList.filter(r => !r.isWithdrawn && !r.withdrawn).map(formatRecord));
       } catch (err) {
         if (!isMounted) return;
         setError(err.message || 'Failed to load team context');
@@ -288,7 +338,8 @@ export default function DashboardPage() {
     setTimeout(() => setCopiedPromoteCmd(null), 2000);
   };
 
-  const filtered = records.filter((s) => {
+  const activeRecords = viewMode === 'vault' ? myRecords : records;
+  const filtered = activeRecords.filter((s) => {
     const q = search.toLowerCase();
     const matchQ = !q || s.title.toLowerCase().includes(q) || s.summary.toLowerCase().includes(q) || s.user.toLowerCase().includes(q);
     const matchP = person === 'all' || s.user === person;
@@ -309,6 +360,44 @@ export default function DashboardPage() {
           </Link>
 
           <div className="h-3.5 w-px bg-white/[0.08]" />
+
+          {/* Mode Switcher Pill: Personal Vault vs Team Workspace */}
+          <div className="flex items-center bg-[#111111] p-0.5 rounded-lg border border-white/[0.1] text-xs">
+            <button
+              onClick={() => {
+                setViewMode('vault');
+                localStorage.setItem('ar_view_mode', 'vault');
+                fetchMyRecords();
+              }}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-mono transition-all cursor-pointer flex items-center gap-1.5 ${
+                viewMode === 'vault'
+                  ? 'bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30'
+                  : 'text-white/50 hover:text-white'
+              }`}
+              title="Personal Context Vault — all records you authored"
+            >
+              <span>📁</span>
+              <span>My Vault</span>
+              <span className="text-[10px] font-mono opacity-60">({myRecords.length})</span>
+            </button>
+            <button
+              onClick={() => {
+                setViewMode('team');
+                localStorage.setItem('ar_view_mode', 'team');
+              }}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-mono transition-all cursor-pointer flex items-center gap-1.5 ${
+                viewMode === 'team'
+                  ? 'bg-cyan-500/20 text-cyan-300 font-semibold border border-cyan-500/30'
+                  : 'text-white/50 hover:text-white'
+              }`}
+              title="Team Workspaces Feed"
+            >
+              <span>👥</span>
+              <span className="hidden sm:inline">Team Feed</span>
+            </button>
+          </div>
+
+          <div className="h-3.5 w-px bg-white/[0.08] hidden sm:block" />
 
           {/* Team Dropdown */}
           <div className="flex items-center gap-1.5">
@@ -459,6 +548,54 @@ export default function DashboardPage() {
       <div className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-8 py-7 flex gap-5">
         {/* Sidebar */}
         <aside className="w-56 shrink-0 hidden md:flex flex-col gap-4">
+          {/* Main Vault Switcher in Sidebar */}
+          <div className="rounded-xl border border-white/[0.08] bg-[#111111] p-2 space-y-1">
+            <button
+              onClick={() => {
+                setViewMode('vault');
+                localStorage.setItem('ar_view_mode', 'vault');
+                fetchMyRecords();
+              }}
+              className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-all flex items-center justify-between cursor-pointer ${
+                viewMode === 'vault'
+                  ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30'
+                  : 'text-white/60 hover:bg-white/[0.04] hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-sm">📁</span>
+                <span>My Context Records</span>
+              </div>
+              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
+                viewMode === 'vault' ? 'bg-emerald-400 text-black font-bold' : 'bg-white/[0.06] text-white/50'
+              }`}>
+                {myRecords.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => {
+                setViewMode('team');
+                localStorage.setItem('ar_view_mode', 'team');
+              }}
+              className={`w-full text-left px-3 py-2 rounded-lg text-xs font-medium transition-all flex items-center justify-between cursor-pointer ${
+                viewMode === 'team'
+                  ? 'bg-cyan-500/15 text-cyan-300 border border-cyan-500/30'
+                  : 'text-white/60 hover:bg-white/[0.04] hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-sm">👥</span>
+                <span>Team Workspaces</span>
+              </div>
+              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
+                viewMode === 'team' ? 'bg-cyan-400 text-black font-bold' : 'bg-white/[0.06] text-white/50'
+              }`}>
+                {teams.length}
+              </span>
+            </button>
+          </div>
+
           {/* Workspaces Management */}
           <div className="rounded-xl border border-white/[0.06] bg-[#111111] p-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -487,7 +624,7 @@ export default function DashboardPage() {
                 <div
                   key={t.id}
                   className={`group/ws flex items-center justify-between rounded-lg px-2.5 py-1.5 transition-all ${
-                    activeTeam?.id === t.id
+                    viewMode === 'team' && activeTeam?.id === t.id
                       ? 'bg-white/[0.08] text-white font-medium'
                       : 'text-white/40 hover:bg-white/[0.04] hover:text-white/70'
                   }`}
@@ -496,11 +633,13 @@ export default function DashboardPage() {
                     onClick={() => {
                       setActiveTeam(t);
                       localStorage.setItem('ar_active_team_id', t.id);
+                      setViewMode('team');
+                      localStorage.setItem('ar_view_mode', 'team');
                     }}
                     className="flex-1 text-left text-xs truncate flex items-center justify-between cursor-pointer mr-1"
                   >
                     <span className="truncate">{t.name}</span>
-                    {activeTeam?.id === t.id && (
+                    {viewMode === 'team' && activeTeam?.id === t.id && (
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 ml-1" />
                     )}
                   </button>
@@ -600,27 +739,35 @@ export default function DashboardPage() {
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-base font-semibold text-white/90 tracking-tight">
-                  {activeTeam ? activeTeam.name : 'Team Context Feed'}
+                  {viewMode === 'vault' ? 'My Context Records' : (activeTeam ? activeTeam.name : 'Team Context Feed')}
                 </h1>
-                {activeTeam && (
-                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.06] text-white/50 border border-white/[0.06]">
-                    ID: {activeTeam.id}
+                {viewMode === 'vault' ? (
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                    Personal Vault • {myRecords.length} record(s)
                   </span>
+                ) : (
+                  activeTeam && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/[0.06] text-white/50 border border-white/[0.06]">
+                      ID: {activeTeam.id}
+                    </span>
+                  )
                 )}
               </div>
               <p className="text-xs text-white/40 mt-0.5">
-                Promoted AI session records live on LCP backend
+                {viewMode === 'vault'
+                  ? 'Your permanent session history, decisions, and distilled cards (persists across all teams)'
+                  : 'Promoted AI session records live on LCP backend'}
               </p>
             </div>
             <div className="flex items-center gap-2">
               <input
                 type="text"
-                placeholder="Search team records…"
+                placeholder={viewMode === 'vault' ? "Search your context records…" : "Search team records…"}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full sm:w-60 px-3.5 py-1.5 rounded-lg bg-white/[0.03] border border-white/[0.08] focus:border-white/20 text-xs text-white/80 placeholder-white/25 outline-hidden transition-all font-sans"
               />
-              {activeTeam && (
+              {viewMode === 'team' && activeTeam && (
                 <button
                   onClick={() => handleDeleteTeam(activeTeam)}
                   className="px-2.5 py-1.5 rounded-lg bg-rose-500/10 border border-rose-500/20 hover:bg-rose-500/20 text-rose-400 text-xs font-mono transition-colors flex items-center gap-1 cursor-pointer shrink-0"
@@ -634,32 +781,54 @@ export default function DashboardPage() {
           </div>
 
           {/* Quick Promote / Workspace helper banner */}
-          <div className="p-3.5 rounded-xl border border-white/[0.08] bg-[#111111] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
-            <div className="flex items-center gap-2">
-              <span className="text-emerald-400 font-bold">⚡</span>
-              <span className="text-white/70 font-sans">
-                Promote local record to <strong className="text-white font-mono">{activeTeam?.name || 'this team'}</strong>:
-              </span>
+          {viewMode === 'vault' ? (
+            <div className="p-3.5 rounded-xl border border-emerald-500/20 bg-emerald-950/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
+              <div className="flex items-center gap-2">
+                <span className="text-emerald-400 font-bold">🔒</span>
+                <span className="text-white/80 font-sans">
+                  <strong>Personal Context Vault:</strong> Your previous context records stay preserved here even if team workspaces change or expire.
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="text-[11px] text-emerald-300 bg-black/60 px-2.5 py-1 rounded-md border border-emerald-500/20 select-all truncate">
+                  agentrelay daemon
+                </code>
+                <button
+                  onClick={() => setShowCliModal(true)}
+                  className="px-2 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] text-white/70 text-[10px] shrink-0 cursor-pointer"
+                >
+                  CLI Guide
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <code className="text-[11px] text-emerald-400 bg-black/60 px-2.5 py-1 rounded-md border border-white/[0.06] select-all truncate">
-                agentrelay promote &lt;recordId&gt; --team {activeTeam?.id || '&lt;teamId&gt;'}
-              </code>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(`agentrelay promote <recordId> --team ${activeTeam?.id || '<teamId>'}`);
-                  setCopiedPromoteCmd('global');
-                  setTimeout(() => setCopiedPromoteCmd(null), 2000);
-                }}
-                className="px-2 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] text-white/70 text-[10px] shrink-0 cursor-pointer"
-              >
-                {copiedPromoteCmd === 'global' ? '✓ Copied' : 'Copy'}
-              </button>
+          ) : (
+            <div className="p-3.5 rounded-xl border border-white/[0.08] bg-[#111111] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
+              <div className="flex items-center gap-2">
+                <span className="text-emerald-400 font-bold">⚡</span>
+                <span className="text-white/70 font-sans">
+                  Promote local record to <strong className="text-white font-mono">{activeTeam?.name || 'this team'}</strong>:
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <code className="text-[11px] text-emerald-400 bg-black/60 px-2.5 py-1 rounded-md border border-white/[0.06] select-all truncate">
+                  agentrelay promote &lt;recordId&gt; --team {activeTeam?.id || '&lt;teamId&gt;'}
+                </code>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(`agentrelay promote <recordId> --team ${activeTeam?.id || '<teamId>'}`);
+                    setCopiedPromoteCmd('global');
+                    setTimeout(() => setCopiedPromoteCmd(null), 2000);
+                  }}
+                  className="px-2 py-1 rounded bg-white/[0.06] hover:bg-white/[0.12] text-white/70 text-[10px] shrink-0 cursor-pointer"
+                >
+                  {copiedPromoteCmd === 'global' ? '✓ Copied' : 'Copy'}
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Cards or Empty State */}
-          {loading ? (
+          {(viewMode === 'vault' ? myRecordsLoading : loading) ? (
             <div className="flex-1 flex flex-col items-center justify-center py-20 text-center">
               <p className="text-xs text-white/40 animate-pulse">Loading context records from LCP server...</p>
             </div>
@@ -669,34 +838,55 @@ export default function DashboardPage() {
                 📁
               </div>
               <div>
-                <h3 className="text-sm font-semibold text-white/90">No context records in this workspace yet</h3>
+                <h3 className="text-sm font-semibold text-white/90">
+                  {viewMode === 'vault' ? 'No context records in your personal vault yet' : 'No context records in this workspace yet'}
+                </h3>
                 <p className="text-xs text-white/40 mt-1 max-w-md mx-auto">
-                  Add code context from your terminal, or join another team workspace using an invite token.
+                  {viewMode === 'vault'
+                    ? 'When you run the AgentRelay background watcher, all distilled coding sessions are automatically backed up here.'
+                    : 'Add code context from your terminal, or join another team workspace using an invite token.'}
                 </p>
               </div>
 
               <div className="w-full max-w-lg p-3 rounded-xl bg-black/60 border border-white/[0.08] font-mono text-xs text-left space-y-1 text-emerald-400">
                 <div className="text-white/40 text-[10px]"># 1. Scope project & capture session</div>
                 <div>agentrelay scope add ~/your-repo</div>
-                <div className="text-white/40 text-[10px] pt-1"># 2. Promote record into this team workspace</div>
-                <div>agentrelay promote &lt;recordId&gt; --team {activeTeam?.id || '&lt;teamId&gt;'}</div>
+                <div className="text-white/40 text-[10px] pt-1">
+                  {viewMode === 'vault' ? '# 2. Distill session with background daemon' : '# 2. Promote record into this team workspace'}
+                </div>
+                <div>{viewMode === 'vault' ? 'agentrelay daemon' : `agentrelay promote <recordId> --team ${activeTeam?.id || '<teamId>'}`}</div>
               </div>
 
               <div className="flex flex-wrap items-center justify-center gap-2.5 pt-2">
-                <button
-                  onClick={() => setShowJoinModal(true)}
-                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/20 transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <span>🔗</span>
-                  <span>Join Team with Token</span>
-                </button>
-                <button
-                  onClick={() => setShowCreateTeamModal(true)}
-                  className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-white/[0.06] border border-white/[0.1] text-white hover:bg-white/[0.12] transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <span>+</span>
-                  <span>Create New Team</span>
-                </button>
+                {viewMode === 'vault' ? (
+                  <button
+                    onClick={() => {
+                      setViewMode('team');
+                      localStorage.setItem('ar_view_mode', 'team');
+                    }}
+                    className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/20 transition-colors flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <span>👥</span>
+                    <span>Browse Team Workspaces</span>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setShowJoinModal(true)}
+                      className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 hover:bg-cyan-500/20 transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>🔗</span>
+                      <span>Join Team with Token</span>
+                    </button>
+                    <button
+                      onClick={() => setShowCreateTeamModal(true)}
+                      className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-white/[0.06] border border-white/[0.1] text-white hover:bg-white/[0.12] transition-colors flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <span>+</span>
+                      <span>Create New Team</span>
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={() => setShowCliModal(true)}
                   className="px-3.5 py-2 rounded-xl text-xs font-mono bg-white text-black hover:bg-white/90 transition-colors flex items-center gap-1.5 cursor-pointer font-bold"
@@ -713,7 +903,7 @@ export default function DashboardPage() {
                   key={s.id}
                   maxTilt={3}
                   spotlightColor="rgba(200,200,210,0.07)"
-                  onClick={() => navigate(`/sessions/${s.id}?teamId=${activeTeam?.id}`)}
+                  onClick={() => navigate(`/sessions/${s.id}?teamId=${s.teamId || activeTeam?.id || ''}`)}
                   className="rounded-xl border border-white/[0.07] bg-[#111111] hover:border-white/[0.15] hover:bg-[#161616] transition-all duration-200 cursor-pointer group"
                 >
                   <div className="p-5">
@@ -766,11 +956,49 @@ export default function DashboardPage() {
                       </div>
                     </div>
 
+                    {/* Share to workspace button (available in vault mode) */}
+                    {viewMode === 'vault' && teams.length > 0 && (
+                      <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="my-2.5 p-2 rounded-lg bg-black/40 border border-white/[0.06] flex flex-wrap items-center justify-between gap-2 text-xs"
+                      >
+                        <span className="text-[11px] text-white/50 font-sans">
+                          Share this personal record to team workspace:
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <select
+                            value={targetShareTeam[s.id] || activeTeam?.id || teams[0].id}
+                            onChange={(e) => setTargetShareTeam(prev => ({ ...prev, [s.id]: e.target.value }))}
+                            className="bg-[#111111] border border-white/[0.12] rounded px-2 py-1 text-[11px] text-white/80 font-mono focus:outline-hidden cursor-pointer"
+                          >
+                            {teams.map(t => (
+                              <option key={t.id} value={t.id} className="bg-[#1A1A1A]">
+                                {t.name}
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            onClick={(e) => handleShareToTeam(e, s.id, targetShareTeam[s.id] || activeTeam?.id || teams[0].id)}
+                            disabled={sharingStatus[s.id] === 'sharing'}
+                            className="px-2.5 py-1 rounded bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-[11px] font-mono font-medium transition-colors cursor-pointer disabled:opacity-50"
+                          >
+                            {sharingStatus[s.id] === 'sharing' ? 'Sharing…' : sharingStatus[s.id] === 'done' ? '✓ Shared' : 'Share →'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="flex items-center gap-3 text-[11px] font-mono text-white/30 pt-2 border-t border-white/[0.04]">
                       <span>📁 {s.filesCount} file(s) touched</span>
                       <span>💡 {s.decisionsCount} decision(s)</span>
                       <span>🏷️ {s.projectTag}</span>
-                      <span className="ml-auto text-[10px] text-emerald-400/80">LCP Record Verified</span>
+                      {viewMode === 'vault' ? (
+                        <span className="ml-auto text-[10px] text-emerald-400/80 font-mono">
+                          Vault Preserved
+                        </span>
+                      ) : (
+                        <span className="ml-auto text-[10px] text-emerald-400/80">LCP Record Verified</span>
+                      )}
                     </div>
                   </div>
                 </TiltCard>
