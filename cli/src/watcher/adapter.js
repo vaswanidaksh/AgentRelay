@@ -28,7 +28,7 @@ export function normalizeLineToEvent(rawLine, sessionId, seq) {
   const { text: text_scrubbed, redactionCounts } = scrubText(rawText);
 
   return {
-    id: `${sessionId}_e_${seq}`,
+    id: `e_${seq}`,
     session_id: sessionId,
     seq,
     ts: timestamp,
@@ -113,7 +113,7 @@ function normalizeParsedObject(parsed, sessionId, seq) {
   const { text: text_scrubbed, redactionCounts } = scrubText(rawText);
 
   return {
-    id: `${sessionId}_e_${seq}`,
+    id: `e_${seq}`,
     session_id: sessionId,
     seq,
     ts: timestamp,

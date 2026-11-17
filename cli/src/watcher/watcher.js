@@ -87,7 +87,7 @@ export function scanAndCaptureSessionFiles() {
         for (const line of linesToProcess) {
           currentSeq += 1;
           const evt = normalizeLineToEvent(line, sessionId, currentSeq);
-          insertStmt.run(evt.id, evt.session_id, evt.seq, evt.ts, evt.kind, evt.text_scrubbed, evt.redaction_counts);
+          insertStmt.run(`${sessionId}_${evt.id}`, evt.session_id, evt.seq, evt.ts, evt.kind, evt.text_scrubbed, evt.redaction_counts);
           totalCaptured += 1;
         }
 
