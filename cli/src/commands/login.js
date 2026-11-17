@@ -4,17 +4,21 @@ import { loadConfig, saveAuth, clearAuth, loadAuth } from '../config.js';
 
 function detectGitHandle() {
   try {
+    const ghUser = execSync('git config --get github.user', { stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    if (ghUser && /^[a-zA-Z0-9_-]+$/.test(ghUser)) return ghUser;
+
     const remoteUrl = execSync('git config --get remote.origin.url', { stdio: ['ignore', 'pipe', 'ignore'] })
       .toString()
       .trim();
+    const match = remoteUrl.match(/github\.com[:/]([^/]+)\//);
+    if (match && match[1]) return match[1];
+
     const userName = execSync('git config --get user.name', { stdio: ['ignore', 'pipe', 'ignore'] })
       .toString()
       .trim();
     if (userName && /^[a-zA-Z0-9_-]+$/.test(userName)) {
       return userName;
     }
-    const match = remoteUrl.match(/github\.com[:/]([^/]+)\//);
-    if (match && match[1]) return match[1];
   } catch {
     // ignore
   }
@@ -69,7 +73,7 @@ export async function loginCommand(options = {}) {
     const data = await response.json();
     saveAuth(data);
 
-    const formattedHandle = data.user.handle.startsWith('@') ? data.user.handle : `@${data.user.handle}`;
+    const formattedHandle = '@' + (data.user?.handle || 'user').replace(/^@+/, '');
     console.log(`✔ Successfully logged in as ${formattedHandle} (${data.user.id})`);
     console.log(`✔ Token saved to ~/.agentrelay/auth.json`);
   } catch (err) {
@@ -84,8 +88,8 @@ export function logoutCommand() {
     console.log('Not currently logged in.');
     return;
   }
-  const rawHandle = auth.user?.handle || 'user';
-  const formattedHandle = rawHandle.startsWith('@') ? rawHandle : `@${rawHandle}`;
+  const rawHandle = auth.user?.handle || auth.handle || 'user';
+  const formattedHandle = '@' + rawHandle.replace(/^@+/, '');
   clearAuth();
   console.log(`✔ Logged out ${formattedHandle}. Local token cleared.`);
 }
