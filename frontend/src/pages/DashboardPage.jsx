@@ -576,8 +576,6 @@ export default function DashboardPage() {
                   No workspaces yet. Create one or join with an invite token.
                 </div>
               ) : (
-                </div>
-              ) : (
                 teams.map((t) => {
                   const isActive = activeTeam?.id === t.id && viewMode === 'team';
                   return (
