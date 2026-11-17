@@ -189,7 +189,17 @@ ${eventsText}`;
 }
 
 function extractRuleBasedDistillation(session, events) {
-  const firstUserMsg = events.find(e => e.kind === 'user')?.text_scrubbed || 'AI Coding Session';
+  const isSystemBlock = (text) => {
+    const trimmed = text.trim();
+    return trimmed.startsWith('<environment_context>') ||
+           trimmed.startsWith('<skills_instructions>') ||
+           trimmed.startsWith('<permissions') ||
+           trimmed.startsWith('<collaboration_mode>') ||
+           trimmed.startsWith('<tools>');
+  };
+
+  const humanUserMsg = events.find(e => e.kind === 'user' && !isSystemBlock(e.text_scrubbed || ''));
+  const firstUserMsg = humanUserMsg ? humanUserMsg.text_scrubbed : (events.find(e => e.kind === 'user')?.text_scrubbed || 'AI Coding Session');
   const firstAssistantMsg = events.find(e => e.kind === 'assistant')?.text_scrubbed || '';
   const files = extractFilesTouched(events);
   const evidenceIds = events.slice(0, 3).map(e => e.id);

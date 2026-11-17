@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -293,9 +294,12 @@ export default function DashboardPage() {
   const displayedRecords = viewMode === 'vault' ? myRecords : records;
 
   const filtered = displayedRecords.filter((s) => {
+    const q = search.toLowerCase();
     const matchesSearch =
-      s.title.toLowerCase().includes(search.toLowerCase()) ||
-      s.summary.toLowerCase().includes(search.toLowerCase());
+      !q ||
+      s.title.toLowerCase().includes(q) ||
+      s.summary.toLowerCase().includes(q) ||
+      s.user.toLowerCase().includes(q);
     const matchesPerson = person === 'all' || s.user === person;
     const matchesAgent = agent === 'all' || s.agent.toLowerCase().includes(agent.toLowerCase());
     return matchesSearch && matchesPerson && matchesAgent;
@@ -741,7 +745,6 @@ export default function DashboardPage() {
                   : 'Promoted AI session records live on LCP backend'}
               </p>
             </div>
-
             {/* Search & Workspace Action Buttons */}
             <div className="flex flex-wrap sm:flex-nowrap items-center gap-2 w-full lg:w-auto">
               <div className="relative flex-1 sm:w-56 md:w-64">
@@ -778,7 +781,6 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
-
           {/* Quick Promote / Workspace helper banner */}
           {viewMode === 'vault' ? (
             <div className="p-3.5 rounded-xl border border-emerald-500/20 bg-emerald-950/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs font-mono">
@@ -825,7 +827,6 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
-
           {/* Cards or Empty State */}
           {(viewMode === 'vault' ? myRecordsLoading : loading) ? (
             <div className="flex-1 flex flex-col items-center justify-center py-20 text-center">
@@ -851,27 +852,46 @@ export default function DashboardPage() {
               <div className="p-4 rounded-xl bg-black/60 border border-white/[0.06] text-left font-mono text-xs max-w-lg w-full space-y-2">
                 <div className="text-white/40 text-[11px]"># 1. Scope project & capture session</div>
                 <div className="text-emerald-400">agentrelay scope add ~/your-repo</div>
-                <div className="text-white/40 text-[11px] pt-1"># 2. Promote record into this team workspace</div>
+                <div className="text-white/40 text-[11px] pt-1">
+                  {viewMode === 'vault' ? '# 2. Distill session with background daemon' : '# 2. Promote record into this team workspace'}
+                </div>
                 <div className="text-emerald-400">
-                  agentrelay promote &lt;recordId&gt; --team {activeTeam ? activeTeam.id : '&lt;teamId&gt;'}
+                  {viewMode === 'vault'
+                    ? 'agentrelay daemon'
+                    : `agentrelay promote <recordId> --team ${activeTeam ? activeTeam.id : '<teamId>'}`}
                 </div>
               </div>
 
               <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-                <button
-                  onClick={() => setShowJoinModal(true)}
-                  className="px-4 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/25 hover:bg-cyan-500/20 text-cyan-300 text-xs font-mono font-medium transition-colors flex items-center gap-2 cursor-pointer"
-                >
-                  <span>🔗</span>
-                  <span>Join Team with Token</span>
-                </button>
-                <button
-                  onClick={() => setShowCreateTeamModal(true)}
-                  className="px-4 py-2 rounded-xl bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.10] text-white/80 hover:text-white text-xs font-mono font-medium transition-colors flex items-center gap-2 cursor-pointer"
-                >
-                  <span>+</span>
-                  <span>Create New Team</span>
-                </button>
+                {viewMode === 'vault' ? (
+                  <button
+                    onClick={() => {
+                      setViewMode('team');
+                      localStorage.setItem('ar_view_mode', 'team');
+                    }}
+                    className="px-4 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/25 hover:bg-cyan-500/20 text-cyan-300 text-xs font-mono font-medium transition-colors flex items-center gap-2 cursor-pointer"
+                  >
+                    <span>👥</span>
+                    <span>Browse Team Workspaces</span>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => setShowJoinModal(true)}
+                      className="px-4 py-2 rounded-xl bg-cyan-500/10 border border-cyan-500/25 hover:bg-cyan-500/20 text-cyan-300 text-xs font-mono font-medium transition-colors flex items-center gap-2 cursor-pointer"
+                    >
+                      <span>🔗</span>
+                      <span>Join Team with Token</span>
+                    </button>
+                    <button
+                      onClick={() => setShowCreateTeamModal(true)}
+                      className="px-4 py-2 rounded-xl bg-white/[0.05] border border-white/[0.08] hover:bg-white/[0.10] text-white/80 hover:text-white text-xs font-mono font-medium transition-colors flex items-center gap-2 cursor-pointer"
+                    >
+                      <span>+</span>
+                      <span>Create New Team</span>
+                    </button>
+                  </>
+                )}
                 <button
                   onClick={() => setShowCliModal(true)}
                   className="px-4 py-2 rounded-xl bg-white text-black hover:bg-white/90 text-xs font-mono font-medium transition-colors flex items-center gap-2 cursor-pointer"
@@ -886,7 +906,7 @@ export default function DashboardPage() {
               {filtered.map((s) => (
                 <TiltCard key={s.id}>
                   <div
-                    onClick={() => navigate(`/sessions/${s.id}`)}
+                    onClick={() => navigate(`/sessions/${s.id}?teamId=${s.teamId || activeTeam?.id || ''}`)}
                     className="p-5 flex flex-col gap-3 group cursor-pointer"
                   >
                     {/* Top Row: User Avatar & Session Title */}

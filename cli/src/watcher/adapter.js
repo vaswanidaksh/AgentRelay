@@ -61,11 +61,11 @@ function extractTextFromContent(content) {
   if (Array.isArray(content)) {
     return content.map(item => {
       if (typeof item === 'string') return item;
-      if (item.type === 'text') return item.text || '';
-      if (item.type === 'tool_use') return `[Tool: ${item.name} (${JSON.stringify(item.input || {})})]`;
-      if (item.type === 'tool_result') return `[Tool Result: ${typeof item.content === 'string' ? item.content : JSON.stringify(item.content || '')}]`;
-      return JSON.stringify(item);
-    }).join('\n');
+      if (item.type === 'text' || item.type === 'input_text' || item.type === 'output_text') return item.text || '';
+      if (item.type === 'tool_use' || item.type === 'custom_tool_call') return `[Tool: ${item.name || 'tool'} (${JSON.stringify(item.input || item.arguments || {})})]`;
+      if (item.type === 'tool_result' || item.type === 'custom_tool_call_output') return `[Tool Result: ${typeof item.content === 'string' ? item.content : JSON.stringify(item.output || item.content || '')}]`;
+      return typeof item === 'object' && item.text ? item.text : JSON.stringify(item);
+    }).filter(Boolean).join('\n');
   }
   if (content && typeof content === 'object') {
     return content.text || content.message || JSON.stringify(content);
@@ -78,24 +78,36 @@ function normalizeParsedObject(parsed, sessionId, seq) {
   let rawText = '';
   let timestamp = parsed.timestamp || parsed.ts || parsed.created_at || new Date().toISOString();
 
-  // Standard Agent / Claude Code / OpenAI / Custom format mapping
-  if (parsed.type === 'user' || parsed.role === 'user') {
+  // Handle Codex/OpenAI payload wrappers
+  let item = parsed;
+  if (parsed.payload && typeof parsed.payload === 'object') {
+    item = parsed.payload;
+  }
+
+  const role = item.role || item.type || parsed.type || '';
+  const itemType = item.type || (item.item && item.item.type) || '';
+
+  // Standard Agent / Claude Code / OpenAI / Codex / Custom format mapping
+  if (role === 'user' || itemType === 'UserMessage' || parsed.type === 'user') {
     kind = 'user';
-    rawText = extractTextFromContent(parsed.content);
-  } else if (parsed.type === 'assistant' || parsed.role === 'assistant') {
+    rawText = extractTextFromContent(item.content || (item.item && item.item.content));
+  } else if (role === 'assistant' || itemType === 'AgentMessage' || parsed.type === 'assistant') {
     kind = 'assistant';
-    rawText = extractTextFromContent(parsed.content);
-  } else if (parsed.type === 'tool_use' || parsed.type === 'tool_call' || parsed.tool_name) {
+    rawText = extractTextFromContent(item.content || (item.item && item.item.content));
+  } else if (role === 'tool_use' || role === 'tool_call' || role === 'custom_tool_call' || itemType === 'CommandExecution') {
     kind = 'tool_call';
-    rawText = `Tool call [${parsed.name || parsed.tool_name || 'tool'}]: ${JSON.stringify(parsed.input || parsed.args || {})}`;
-  } else if (parsed.type === 'tool_result' || parsed.type === 'tool_response') {
+    rawText = `Tool call [${item.name || item.call_id || 'tool'}]: ${JSON.stringify(item.input || item.arguments || item.args || {})}`;
+  } else if (role === 'tool_result' || role === 'tool_response' || role === 'custom_tool_call_output') {
     kind = 'tool_result';
-    rawText = `Tool result: ${typeof parsed.output === 'string' ? parsed.output : JSON.stringify(parsed.output || parsed.result || parsed.content || '')}`;
-  } else if (parsed.type === 'error' || parsed.error) {
+    rawText = `Tool result: ${typeof item.output === 'string' ? item.output : JSON.stringify(item.output || item.result || item.content || '')}`;
+  } else if (role === 'reasoning') {
+    kind = 'reasoning';
+    rawText = extractTextFromContent(item.content || item.summary || '');
+  } else if (role === 'error' || item.error) {
     kind = 'error';
-    rawText = `Error: ${parsed.error || parsed.message || JSON.stringify(parsed)}`;
+    rawText = `Error: ${item.error || item.message || JSON.stringify(item)}`;
   } else {
-    rawText = extractTextFromContent(parsed.text || parsed.content || parsed);
+    rawText = extractTextFromContent(item.text || item.content || item.message || item);
   }
 
   const { text: text_scrubbed, redactionCounts } = scrubText(rawText);

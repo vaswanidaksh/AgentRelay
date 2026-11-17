@@ -27,7 +27,9 @@ export async function initCommand(options = {}) {
 
   // Auto-pull & context sync if user is logged in
   if (auth && auth.token) {
-    console.log(`\n🔄 Authenticated as ${auth.handle || '@user'}. Pulling team context and code files...`);
+    const rawHandle = auth.user?.handle || auth.handle || auth.user?.name || '@user';
+    const cleanHandle = '@' + rawHandle.replace(/^@+/, '');
+    console.log(`\n🔄 Authenticated as ${cleanHandle}. Pulling team context and code files...`);
     try {
       await pullCommand();
     } catch (e) {

@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import os from 'os';
 import crypto from 'crypto';
 import { getDb } from '../db.js';
 import { loadConfig } from '../config.js';
@@ -27,6 +28,10 @@ export function scanAndCaptureSessionFiles() {
     if (!fs.existsSync(resolvedPath)) continue;
 
     const sessionFiles = findTranscriptFiles(resolvedPath);
+    const codexFiles = findCodexSessionsForScope(resolvedPath);
+    for (const cf of codexFiles) {
+      if (!sessionFiles.includes(cf)) sessionFiles.push(cf);
+    }
 
     for (const filePath of sessionFiles) {
       const pathHash = hashPath(filePath);
@@ -82,7 +87,7 @@ export function scanAndCaptureSessionFiles() {
         for (const line of linesToProcess) {
           currentSeq += 1;
           const evt = normalizeLineToEvent(line, sessionId, currentSeq);
-          insertStmt.run(evt.id, evt.session_id, evt.seq, evt.ts, evt.kind, evt.text_scrubbed, evt.redaction_counts);
+          insertStmt.run(`${sessionId}_${evt.id}`, evt.session_id, evt.seq, evt.ts, evt.kind, evt.text_scrubbed, evt.redaction_counts);
           totalCaptured += 1;
         }
 
@@ -151,4 +156,29 @@ function findTranscriptFiles(dirPath) {
     // ignore inaccessible directories
   }
   return results;
+}
+
+export function findCodexSessionsForScope(resolvedScopePath) {
+  const codexDir = path.join(os.homedir(), '.codex', 'sessions');
+  if (!fs.existsSync(codexDir)) return [];
+
+  const matched = [];
+  const allFiles = findTranscriptFiles(codexDir);
+  for (const file of allFiles) {
+    if (!file.endsWith('.jsonl')) continue;
+    try {
+      const fd = fs.openSync(file, 'r');
+      const buf = Buffer.alloc(4096);
+      const bytesRead = fs.readSync(fd, buf, 0, 4096, 0);
+      fs.closeSync(fd);
+      const chunk = buf.toString('utf-8', 0, bytesRead);
+      const match = chunk.match(/"cwd"\s*:\s*"([^"]+)"/);
+      if (match && path.resolve(match[1]) === resolvedScopePath) {
+        matched.push(file);
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return matched;
 }
