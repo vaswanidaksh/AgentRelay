@@ -9,6 +9,7 @@ import { shareCommand, unshareCommand } from './commands/share.js';
 import { loginCommand, logoutCommand } from './commands/login.js';
 import { teamCommand } from './commands/team.js';
 import { promoteCommand } from './commands/promote.js';
+import { pushCommand } from './commands/push.js';
 import { unpromoteCommand } from './commands/unpromote.js';
 import { pullCommand } from './commands/pull.js';
 import { handoffCommand } from './commands/handoff.js';
@@ -104,6 +105,12 @@ export function createProgram() {
     .description('Upload a shareable record to the team server')
     .option('--team <teamId>', 'Target team ID')
     .action((recordId, options) => promoteCommand(recordId, options));
+
+  program
+    .command('push [recordId]')
+    .description('Upload context records to your Personal Context Vault on the dashboard')
+    .option('--team <teamId>', 'Target team ID')
+    .action((recordId, options) => pushCommand(recordId, options));
 
   program
     .command('unpromote <recordId>')

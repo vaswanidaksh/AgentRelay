@@ -124,3 +124,70 @@ export function withdrawRecord(teamId, recordId) {
 
   return true;
 }
+
+/**
+ * Lists all context records authored by a specific user across all workspaces (Personal Vault).
+ * Deduplicates by record_id returning the highest version.
+ */
+export function listRecordsForAuthor(authorId, { limit = 100 } = {}) {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT r.seq, r.record_id, r.version, r.team_id, r.author_id, r.project_tag,
+           r.schema_version, r.json, r.sensitivity, r.promoted_at, r.withdrawn_at,
+           t.name AS team_name
+    FROM records r
+    JOIN (
+      SELECT record_id, MAX(version) AS max_version
+      FROM records
+      WHERE author_id = ? AND withdrawn_at IS NULL
+      GROUP BY record_id
+    ) latest ON r.record_id = latest.record_id AND r.version = latest.max_version
+    LEFT JOIN teams t ON r.team_id = t.id
+    WHERE r.author_id = ? AND r.withdrawn_at IS NULL
+    ORDER BY r.seq DESC
+    LIMIT ?
+  `).all(authorId, authorId, limit);
+
+  return rows.map(r => ({
+    seq: r.seq,
+    recordId: r.record_id,
+    version: r.version,
+    teamId: r.team_id,
+    teamName: r.team_name,
+    authorId: r.author_id,
+    projectTag: r.project_tag,
+    schemaVersion: r.schema_version,
+    sensitivity: r.sensitivity,
+    promotedAt: r.promoted_at,
+    withdrawnAt: r.withdrawn_at,
+    withdrawn: Boolean(r.withdrawn_at),
+    isWithdrawn: Boolean(r.withdrawn_at),
+    record: JSON.parse(r.json)
+  }));
+}
+
+/**
+ * Shares/promotes an existing record authored by the user into a target team.
+ */
+export function shareRecordToTeam({ recordId, targetTeamId, authorId }) {
+  const db = getDb();
+  const existing = db.prepare(`
+    SELECT * FROM records
+    WHERE record_id = ? AND author_id = ? AND withdrawn_at IS NULL
+    ORDER BY version DESC
+    LIMIT 1
+  `).get(recordId, authorId);
+
+  if (!existing) return null;
+
+  return upsertPromotedRecord({
+    recordId: existing.record_id,
+    version: existing.version,
+    teamId: targetTeamId,
+    authorId: existing.author_id,
+    projectTag: existing.project_tag,
+    schemaVersion: existing.schema_version,
+    json: existing.json,
+    sensitivity: existing.sensitivity,
+  });
+}

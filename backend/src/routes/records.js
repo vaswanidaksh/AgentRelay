@@ -7,8 +7,11 @@ import {
   upsertPromotedRecord,
   pullRecords,
   getRecord,
-  withdrawRecord
+  withdrawRecord,
+  listRecordsForAuthor,
+  shareRecordToTeam
 } from '../db/queries/records.js';
+import { getOrCreatePersonalTeam } from '../db/queries/teams.js';
 import { logAuditEvent } from '../db/queries/audit.js';
 import { ValidationError, ForbiddenError, NotFoundError } from '../core/errors.js';
 
@@ -82,6 +85,25 @@ router.put(
         json: scrubbedRecord,
         sensitivity: scrubbedRecord.sensitivity.label,
       });
+
+      // Mirror into author's Personal Vault so it is preserved even if team workspace is removed
+      try {
+        const personalTeam = getOrCreatePersonalTeam(req.user.id, req.user.handle);
+        if (personalTeam && personalTeam.id !== teamId) {
+          upsertPromotedRecord({
+            recordId,
+            version,
+            teamId: personalTeam.id,
+            authorId: req.user.id,
+            projectTag: scrubbedRecord.acl?.projectTag || scrubbedRecord.source?.projectTag || 'default',
+            schemaVersion: scrubbedRecord.schemaVersion,
+            json: scrubbedRecord,
+            sensitivity: scrubbedRecord.sensitivity.label,
+          });
+        }
+      } catch (vaultErr) {
+        console.warn('[Vault] Mirror to personal vault warning:', vaultErr.message);
+      }
 
       logAuditEvent({
         actorId: req.user.id,
@@ -196,6 +218,61 @@ router.delete(
       });
 
       res.json({ message: 'Record withdrawn successfully.' });
+    } catch (err) {
+      next(err);
+    }
+  }
+);
+
+/**
+ * Lists all context records authored by the authenticated user across all sessions (Personal Vault).
+ */
+router.get('/me/records', requireAuth, (req, res, next) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit || '100', 10), 200);
+    const records = listRecordsForAuthor(req.user.id, { limit });
+    res.json({ records });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Shares/promotes an existing record authored by the user into a target team (PRD FR-019).
+ */
+router.post(
+  '/teams/:id/records/:recordId/share',
+  requireAuth,
+  requireTeamMember,
+  (req, res, next) => {
+    try {
+      const { id: teamId, recordId } = req.params;
+      const stored = shareRecordToTeam({
+        recordId,
+        targetTeamId: teamId,
+        authorId: req.user.id
+      });
+
+      if (!stored) {
+        throw new NotFoundError('Record not found in your vault.');
+      }
+
+      logAuditEvent({
+        actorId: req.user.id,
+        action: 'record_promoted',
+        teamId,
+        recordId,
+        metadata: {
+          version: stored.version,
+          sharedFromVault: true
+        }
+      });
+
+      res.status(200).json({
+        message: 'Record successfully shared to team workspace.',
+        seq: stored.seq,
+        record: JSON.parse(stored.json)
+      });
     } catch (err) {
       next(err);
     }

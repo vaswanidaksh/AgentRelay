@@ -137,18 +137,23 @@ export async function withdrawRecord(teamId, recordId) {
   return res.data;
 }
 
-/** GET /api/v1/records/my - Fetch records authored by the logged-in user */
+/** GET /api/v1/me/records — Personal Context Vault (with fallback to /records/my) */
 export async function listMyRecords() {
   try {
-    const res = await apiClient.get('/records/my');
+    const res = await apiClient.get('/me/records');
     return res.data?.records || res.data || [];
-  } catch (err) {
-    console.warn('listMyRecords request failed, fallback to empty array:', err?.message);
-    return [];
+  } catch {
+    try {
+      const res = await apiClient.get('/records/my');
+      return res.data?.records || res.data || [];
+    } catch (err) {
+      console.warn('listMyRecords request failed, fallback to empty array:', err?.message);
+      return [];
+    }
   }
 }
 
-/** POST /api/v1/teams/:id/records/:recordId/share */
+/** POST /api/v1/teams/:teamId/records/:recordId/share */
 export async function shareRecordToTeam(teamId, recordId) {
   const res = await apiClient.post(`/teams/${teamId}/records/${recordId}/share`);
   return res.data;
