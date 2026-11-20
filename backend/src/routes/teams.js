@@ -76,7 +76,8 @@ router.get('/teams', requireAuth, (req, res, next) => {
  */
 router.post('/teams/:id/invites', requireAuth, requireTeamMember, requireTeamAdmin, (req, res, next) => {
   try {
-    const { maxUses = 1, expiresInHours = 48 } = req.body;
+    // Generous default: 30 days (720 hours) and 100 uses so team tokens don't expire prematurely
+    const { maxUses = 100, expiresInHours = 720 } = req.body;
     const inviteId = `inv_${uuidv4().replace(/-/g, '').slice(0, 10)}`;
     const rawToken = `inv_${crypto.randomBytes(18).toString('hex')}`;
     

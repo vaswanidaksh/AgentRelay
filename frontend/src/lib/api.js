@@ -97,8 +97,8 @@ export async function listMembers(teamId) {
   return res.data.members || [];
 }
 
-/** POST /api/v1/teams/:id/invites */
-export async function createInvite(teamId, { maxUses = 5, expiresInHours = 48 } = {}) {
+/** POST /api/v1/teams/:id/invites (Defaults to 30 days validity, 100 uses) */
+export async function createInvite(teamId, { maxUses = 100, expiresInHours = 720 } = {}) {
   const res = await apiClient.post(`/teams/${teamId}/invites`, { maxUses, expiresInHours });
   return res.data.invite;
 }

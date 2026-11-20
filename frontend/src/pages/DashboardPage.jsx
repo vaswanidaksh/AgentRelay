@@ -6,6 +6,7 @@ import TiltCard from '../components/TiltCard';
 import CliCommandsModal from '../components/CliCommandsModal';
 import JoinWorkspaceModal from '../components/JoinWorkspaceModal';
 import CreateTeamModal from '../components/CreateTeamModal';
+import TerminalAgentTutorialModal from '../components/TerminalAgentTutorialModal';
 import {
   listTeams,
   listRecords,
@@ -20,6 +21,51 @@ import {
   shareRecordToTeam,
 } from '../lib/api';
 
+// ---------------------------------------------------------------------------
+// Card Persistence & Local Cache Layer
+// Ensures cards never vanish across reloads, network delays, or Render spin-downs
+// ---------------------------------------------------------------------------
+const getTeamRecordsCacheKey = (teamId) => `ar_cached_records_${teamId}`;
+const VAULT_RECORDS_CACHE_KEY = 'ar_cached_vault_records';
+
+const loadCachedRecords = (key) => {
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.warn(`Failed to parse cached records for ${key}:`, e);
+    return [];
+  }
+};
+
+const saveCachedRecords = (key, records) => {
+  try {
+    if (!key || !Array.isArray(records)) return;
+    localStorage.setItem(key, JSON.stringify(records.slice(0, 100)));
+  } catch (e) {
+    console.warn(`Failed to persist records to ${key}:`, e);
+  }
+};
+
+const mergeRecords = (cachedList = [], incomingList = []) => {
+  const map = new Map();
+  cachedList.forEach((r) => {
+    if (r && r.id) map.set(r.id, r);
+  });
+  incomingList.forEach((r) => {
+    if (r && r.id && !r.isWithdrawn && !r.withdrawn) {
+      map.set(r.id, r);
+    }
+  });
+  return Array.from(map.values()).sort((a, b) => {
+    const timeA = new Date(a.raw?.times?.createdAt || a.raw?.times?.updatedAt || a.timestamp || 0).getTime();
+    const timeB = new Date(b.raw?.times?.createdAt || b.raw?.times?.updatedAt || b.timestamp || 0).getTime();
+    return timeB - timeA;
+  });
+};
+
 export default function DashboardPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -27,13 +73,19 @@ export default function DashboardPage() {
   const [teams, setTeams] = useState([]);
   const [activeTeam, setActiveTeam] = useState(null);
   const [members, setMembers] = useState([]);
-  const [records, setRecords] = useState([]);
+
+  // Initialize records from cache so they render immediately without blank screen
+  const [records, setRecords] = useState(() => {
+    const savedTeamId = localStorage.getItem('ar_active_team_id');
+    return savedTeamId ? loadCachedRecords(getTeamRecordsCacheKey(savedTeamId)) : [];
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [inviteToken, setInviteToken] = useState(null);
 
   // New Modals State
   const [showCliModal, setShowCliModal] = useState(false);
+  const [showTutorialModal, setShowTutorialModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showCreateTeamModal, setShowCreateTeamModal] = useState(false);
   const [showMobileSidebar, setShowMobileSidebar] = useState(false);
@@ -43,7 +95,7 @@ export default function DashboardPage() {
 
   // View Mode: 'team' (shared workspace feed) vs 'vault' (personal context records)
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('ar_view_mode') || 'team');
-  const [myRecords, setMyRecords] = useState([]);
+  const [myRecords, setMyRecords] = useState(() => loadCachedRecords(VAULT_RECORDS_CACHE_KEY));
   const [myRecordsLoading, setMyRecordsLoading] = useState(false);
   const [targetShareTeam, setTargetShareTeam] = useState({});
   const [sharingStatus, setSharingStatus] = useState({});
@@ -81,9 +133,16 @@ export default function DashboardPage() {
       const formatted = raw
         .filter(r => !r.isWithdrawn && !r.withdrawn)
         .map(formatRecord);
-      setMyRecords(formatted);
+      const cached = loadCachedRecords(VAULT_RECORDS_CACHE_KEY);
+      const merged = mergeRecords(cached, formatted);
+      setMyRecords(merged);
+      saveCachedRecords(VAULT_RECORDS_CACHE_KEY, merged);
     } catch (e) {
       console.warn('Failed to fetch personal records:', e.message);
+      const cached = loadCachedRecords(VAULT_RECORDS_CACHE_KEY);
+      if (cached.length > 0) {
+        setMyRecords(cached);
+      }
     } finally {
       setMyRecordsLoading(false);
     }
@@ -91,6 +150,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     fetchMyRecords();
+    const seen = localStorage.getItem('ar_tutorial_seen');
+    if (!seen) {
+      setShowTutorialModal(true);
+    }
   }, []);
 
   const handleShareToTeam = async (e, recordId, targetTeamId) => {
@@ -108,7 +171,11 @@ export default function DashboardPage() {
       }, 3000);
       if (activeTeam?.id === targetTeamId) {
         const teamRecs = await listRecords(targetTeamId);
-        setRecords(teamRecs.filter(r => !r.isWithdrawn && !r.withdrawn).map(formatRecord));
+        const formatted = teamRecs.filter(r => !r.isWithdrawn && !r.withdrawn).map(formatRecord);
+        const cached = loadCachedRecords(getTeamRecordsCacheKey(targetTeamId));
+        const merged = mergeRecords(cached, formatted);
+        setRecords(merged);
+        saveCachedRecords(getTeamRecordsCacheKey(targetTeamId), merged);
       }
     } catch (err) {
       alert('Failed to share record: ' + (err.response?.data?.error?.message || err.message));
@@ -205,27 +272,53 @@ export default function DashboardPage() {
     fetchTeams();
   }, []);
 
+  // Immediately restore cached records when switching teams to avoid blank flicker
   useEffect(() => {
-    if (!activeTeam) return;
-    const fetchTeamDetails = async () => {
+    if (activeTeam?.id) {
+      const cached = loadCachedRecords(getTeamRecordsCacheKey(activeTeam.id));
+      if (cached.length > 0) {
+        setRecords(cached);
+      }
+    }
+  }, [activeTeam?.id]);
+
+  useEffect(() => {
+    if (!activeTeam?.id) return;
+    const fetchTeamDetails = async (isBackground = false) => {
       try {
-        setLoading(true);
+        if (!isBackground) setLoading(true);
         const [memData, recData] = await Promise.all([
           listMembers(activeTeam.id),
           listRecords(activeTeam.id),
         ]);
         setMembers(memData);
-        setRecords(
-          recData.filter((r) => !r.isWithdrawn && !r.withdrawn).map(formatRecord)
-        );
+        const formatted = recData
+          .filter((r) => !r.isWithdrawn && !r.withdrawn)
+          .map(formatRecord);
+        const cached = loadCachedRecords(getTeamRecordsCacheKey(activeTeam.id));
+        const merged = mergeRecords(cached, formatted);
+        setRecords(merged);
+        saveCachedRecords(getTeamRecordsCacheKey(activeTeam.id), merged);
       } catch (err) {
-        setError(err.message || 'Failed to load team data');
+        console.warn('Failed to load team data:', err.message);
+        const cached = loadCachedRecords(getTeamRecordsCacheKey(activeTeam.id));
+        if (cached.length > 0) {
+          setRecords(cached);
+        } else if (!isBackground) {
+          setError(err.message || 'Failed to load team data');
+        }
       } finally {
-        setLoading(false);
+        if (!isBackground) setLoading(false);
       }
     };
-    fetchTeamDetails();
-  }, [activeTeam]);
+
+    fetchTeamDetails(false);
+    // Auto-poll every 12 seconds so CLI promotions appear automatically
+    const interval = setInterval(() => {
+      fetchTeamDetails(true);
+    }, 12000);
+    return () => clearInterval(interval);
+  }, [activeTeam?.id]);
 
   const handleCreateInvite = async () => {
     if (!activeTeam) return;
@@ -411,6 +504,19 @@ export default function DashboardPage() {
 
         {/* Right: Actions, System Status & Profile */}
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Interactive Tutorial Button */}
+          <button
+            onClick={() => setShowTutorialModal(true)}
+            className="h-8 px-2.5 sm:px-3 rounded-lg bg-cyan-500/15 border border-cyan-500/35 hover:bg-cyan-500/25 text-cyan-300 text-xs font-mono font-medium transition-colors flex items-center gap-1.5 cursor-pointer shadow-[0_0_12px_rgba(6,182,212,0.15)]"
+            title="Interactive Tutorial: How to use AgentRelay with your terminal coding agents"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500"></span>
+            </span>
+            <span className="hidden sm:inline">Tutorial</span>
+          </button>
+
           {/* CLI Commands Reference */}
           <button
             onClick={() => setShowCliModal(true)}
@@ -681,10 +787,17 @@ export default function DashboardPage() {
           </div>
 
           {/* CLI Helper Section */}
-          <div className="pt-2 border-t border-white/[0.06]">
-            <span className="text-white/40 text-[10px] tracking-wider uppercase font-semibold block mb-2 px-1">
-              Terminal Help
+          <div className="pt-2 border-t border-white/[0.06] space-y-1.5">
+            <span className="text-white/40 text-[10px] tracking-wider uppercase font-semibold block px-1">
+              Terminal & Agent Help
             </span>
+            <button
+              onClick={() => setShowTutorialModal(true)}
+              className="w-full py-2 px-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/25 hover:bg-cyan-500/20 text-cyan-300 text-xs font-mono transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <span>💡</span>
+              <span>Terminal & Agent Guide</span>
+            </button>
             <button
               onClick={() => setShowCliModal(true)}
               className="w-full py-2 px-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-400 text-xs font-mono transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
@@ -892,6 +1005,13 @@ export default function DashboardPage() {
                     </button>
                   </>
                 )}
+                <button
+                  onClick={() => setShowTutorialModal(true)}
+                  className="px-4 py-2 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 text-xs font-mono font-medium transition-all flex items-center gap-2 cursor-pointer shadow-[0_0_12px_rgba(6,182,212,0.15)]"
+                >
+                  <span>💡</span>
+                  <span>How It Works Tutorial</span>
+                </button>
                 <button
                   onClick={() => setShowCliModal(true)}
                   className="px-4 py-2 rounded-xl bg-white text-black hover:bg-white/90 text-xs font-mono font-medium transition-colors flex items-center gap-2 cursor-pointer"
@@ -1345,6 +1465,17 @@ export default function DashboardPage() {
               <button
                 onClick={() => {
                   setShowMobileSidebar(false);
+                  setShowTutorialModal(true);
+                }}
+                className="w-full py-2 px-2.5 rounded-lg bg-cyan-500/10 border border-cyan-500/25 hover:bg-cyan-500/20 text-cyan-300 text-xs font-mono font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <span>💡</span>
+                <span>Tutorial & Setup Guide</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setShowMobileSidebar(false);
                   setShowCliModal(true);
                 }}
                 className="w-full py-2 px-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/20 text-emerald-400 text-xs font-mono font-medium transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
@@ -1367,6 +1498,13 @@ export default function DashboardPage() {
           <div className="flex-1" onClick={() => setShowMobileSidebar(false)} />
         </div>
       )}
+
+      {/* Interactive Terminal & Coding Agent Tutorial Modal */}
+      <TerminalAgentTutorialModal
+        isOpen={showTutorialModal}
+        onClose={() => setShowTutorialModal(false)}
+        activeTeamId={activeTeam?.id}
+      />
 
       {/* CLI Commands Reference Modal */}
       <CliCommandsModal
