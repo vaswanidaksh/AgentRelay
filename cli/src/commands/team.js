@@ -45,13 +45,13 @@ export async function teamCommand(action, arg, options) {
       const res = await fetch(`${config.serverUrl}/api/v1/teams/${teamId}/invites`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({ expiresInHours: 48 }),
+        body: JSON.stringify({ expiresInHours: 720, maxUses: 100 }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error?.message || 'Failed to create invite');
       console.log(`✔ Created invite token for team ${teamId}:`);
       console.log(`  Token: ${data.invite.token}`);
-      console.log(`  Expires: ${data.invite.expiresAt}`);
+      console.log(`  Expires: ${data.invite.expiresAt} (Valid for 30 days, up to 100 uses)`);
     } else if (action === 'join') {
       const inviteToken = arg;
       if (!inviteToken) {
