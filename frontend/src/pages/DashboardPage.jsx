@@ -9,6 +9,7 @@ import CreateTeamModal from '../components/CreateTeamModal';
 import TerminalAgentTutorialModal from '../components/TerminalAgentTutorialModal';
 import {
   listTeams,
+  syncTeams,
   listRecords,
   listMembers,
   createInvite,
@@ -22,11 +23,47 @@ import {
 } from '../lib/api';
 
 // ---------------------------------------------------------------------------
-// Card Persistence & Local Cache Layer
-// Ensures cards never vanish across reloads, network delays, or Render spin-downs
+// Card & Team Persistence Local Cache Layer
+// Ensures cards and team workspaces never vanish across logout/login, reloads, or Render spin-downs
 // ---------------------------------------------------------------------------
 const getTeamRecordsCacheKey = (teamId) => `ar_cached_records_${teamId}`;
 const VAULT_RECORDS_CACHE_KEY = 'ar_cached_vault_records';
+const TEAMS_CACHE_KEY = 'ar_cached_teams';
+
+const loadCachedTeams = () => {
+  try {
+    const raw = localStorage.getItem(TEAMS_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.warn('Failed to parse cached teams:', e);
+    return [];
+  }
+};
+
+const saveCachedTeams = (teams) => {
+  try {
+    if (!Array.isArray(teams)) return;
+    localStorage.setItem(TEAMS_CACHE_KEY, JSON.stringify(teams));
+  } catch (e) {
+    console.warn('Failed to persist teams:', e);
+  }
+};
+
+const mergeTeams = (cachedTeams = [], serverTeams = []) => {
+  const map = new Map();
+  cachedTeams.forEach((t) => {
+    if (t && t.id) map.set(t.id, t);
+  });
+  serverTeams.forEach((t) => {
+    if (t && t.id) {
+      const existing = map.get(t.id) || {};
+      map.set(t.id, { ...existing, ...t });
+    }
+  });
+  return Array.from(map.values());
+};
 
 const loadCachedRecords = (key) => {
   try {
@@ -70,8 +107,13 @@ export default function DashboardPage() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const [teams, setTeams] = useState([]);
-  const [activeTeam, setActiveTeam] = useState(null);
+  // Initialize teams from local cache so workspaces are visible immediately after login/reload
+  const [teams, setTeams] = useState(() => loadCachedTeams());
+  const [activeTeam, setActiveTeam] = useState(() => {
+    const savedTeamId = localStorage.getItem('ar_active_team_id');
+    const cached = loadCachedTeams();
+    return (savedTeamId ? cached.find((t) => t.id === savedTeamId) : null) || cached[0] || null;
+  });
   const [members, setMembers] = useState([]);
 
   // Initialize records from cache so they render immediately without blank screen
@@ -252,17 +294,45 @@ export default function DashboardPage() {
   const fetchTeams = async () => {
     try {
       setLoading(true);
-      const data = await listTeams();
-      setTeams(data);
-      if (data.length > 0) {
+      const serverTeams = await listTeams();
+      const cached = loadCachedTeams();
+      const merged = mergeTeams(cached, serverTeams);
+      setTeams(merged);
+      saveCachedTeams(merged);
+
+      // If backend was restarted or missing any of user's cached teams, sync them to backend in background
+      const missingOnServer = cached.filter((c) => !serverTeams.some((s) => s.id === c.id));
+      if (missingOnServer.length > 0) {
+        try {
+          const synced = await syncTeams(cached);
+          if (synced && synced.length > 0) {
+            const reMerged = mergeTeams(merged, synced);
+            setTeams(reMerged);
+            saveCachedTeams(reMerged);
+          }
+        } catch {
+          // ignore background sync errors
+        }
+      }
+
+      if (merged.length > 0) {
         const savedTeamId = localStorage.getItem('ar_active_team_id');
-        const found = savedTeamId ? data.find((t) => t.id === savedTeamId) : null;
-        setActiveTeam(found || data[0]);
+        const found = savedTeamId ? merged.find((t) => t.id === savedTeamId) : null;
+        setActiveTeam(found || merged[0]);
       } else {
         setActiveTeam(null);
       }
     } catch (err) {
-      setError(err.message || 'Failed to load teams');
+      console.warn('Failed to load teams from server, falling back to cache:', err.message);
+      const cached = loadCachedTeams();
+      if (cached.length > 0) {
+        setTeams(cached);
+        const savedTeamId = localStorage.getItem('ar_active_team_id');
+        const found = savedTeamId ? cached.find((t) => t.id === savedTeamId) : null;
+        setActiveTeam(found || cached[0]);
+      } else {
+        setError(err.message || 'Failed to load teams');
+      }
     } finally {
       setLoading(false);
     }
@@ -332,15 +402,41 @@ export default function DashboardPage() {
     }
   };
 
-  const handleJoinSuccess = async (joinedTeamId) => {
+  const handleJoinSuccess = async (joinedTeam) => {
+    const teamId = typeof joinedTeam === 'string' ? joinedTeam : joinedTeam?.id;
+    const teamObj = typeof joinedTeam === 'object' && joinedTeam?.id ? joinedTeam : null;
+
+    if (teamObj) {
+      const current = loadCachedTeams();
+      const updated = mergeTeams(current, [teamObj]);
+      setTeams(updated);
+      saveCachedTeams(updated);
+      setActiveTeam(teamObj);
+      if (teamId) localStorage.setItem('ar_active_team_id', teamId);
+    }
+
     await fetchTeams();
-    const joined = teams.find((t) => t.id === joinedTeamId);
-    if (joined) setActiveTeam(joined);
+
+    if (teamId) {
+      const all = loadCachedTeams();
+      const found = all.find((t) => t.id === teamId);
+      if (found) {
+        setActiveTeam(found);
+        localStorage.setItem('ar_active_team_id', found.id);
+      }
+    }
   };
 
   const handleCreateTeamSuccess = async (createdTeam) => {
+    if (createdTeam) {
+      const current = loadCachedTeams();
+      const updated = mergeTeams(current, [createdTeam]);
+      setTeams(updated);
+      saveCachedTeams(updated);
+      setActiveTeam(createdTeam);
+      localStorage.setItem('ar_active_team_id', createdTeam.id);
+    }
     await fetchTeams();
-    setActiveTeam(createdTeam);
   };
 
   const handleDeleteTeam = async (teamToDelete) => {
@@ -354,6 +450,7 @@ export default function DashboardPage() {
       await deleteTeam(teamToDelete.id);
       const remainingTeams = teams.filter((t) => t.id !== teamToDelete.id);
       setTeams(remainingTeams);
+      saveCachedTeams(remainingTeams);
       if (activeTeam?.id === teamToDelete.id) {
         const nextActive = remainingTeams.length > 0 ? remainingTeams[0] : null;
         setActiveTeam(nextActive);

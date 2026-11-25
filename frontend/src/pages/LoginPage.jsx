@@ -35,7 +35,16 @@ export default function LoginPage() {
 
       if (inviteCode && inviteCode.trim()) {
         try {
-          await joinTeam(inviteCode.trim());
+          const res = await joinTeam(inviteCode.trim());
+          if (res?.team) {
+            const current = JSON.parse(localStorage.getItem('ar_cached_teams') || '[]');
+            const exists = current.some((t) => t.id === res.team.id);
+            if (!exists) {
+              current.unshift(res.team);
+              localStorage.setItem('ar_cached_teams', JSON.stringify(current));
+            }
+            localStorage.setItem('ar_active_team_id', res.team.id);
+          }
         } catch {
           // ignore invite error — user is still logged in
         }
