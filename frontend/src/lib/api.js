@@ -85,6 +85,17 @@ export async function listTeams() {
   return res.data.teams || [];
 }
 
+/** POST /api/v1/teams/sync - Persists and restores local workspaces across sessions/restarts */
+export async function syncTeams(teams) {
+  try {
+    const res = await apiClient.post('/teams/sync', { teams });
+    return res.data.teams || [];
+  } catch (err) {
+    console.warn('Failed to sync teams to backend:', err.message);
+    return [];
+  }
+}
+
 /** POST /api/v1/teams */
 export async function createTeam(name) {
   const res = await apiClient.post('/teams', { name });

@@ -11,6 +11,7 @@ import {
   findInviteByToken,
   acceptInvite,
   listMembers,
+  addMember,
   removeMember,
   deleteTeam
 } from '../db/queries/teams.js';
@@ -66,6 +67,38 @@ router.get('/teams', requireAuth, (req, res, next) => {
       teams = listTeamsForUser(req.user.id);
     }
     res.json({ teams });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Synchronizes/restores workspaces created or joined by the user across client restarts or container wipes.
+ */
+router.post('/teams/sync', requireAuth, (req, res, next) => {
+  try {
+    const { teams: clientTeams } = req.body;
+    if (Array.isArray(clientTeams) && clientTeams.length > 0) {
+      for (const t of clientTeams) {
+        if (!t || !t.id || !t.name) continue;
+        const existingTeam = findTeamById(t.id);
+        if (!existingTeam) {
+          createTeam({
+            id: t.id,
+            name: t.name,
+            createdBy: req.user.id
+          });
+        } else {
+          addMember({
+            teamId: t.id,
+            userId: req.user.id,
+            role: t.role || 'member'
+          });
+        }
+      }
+    }
+    const userTeams = listTeamsForUser(req.user.id);
+    res.json({ teams: userTeams });
   } catch (err) {
     next(err);
   }

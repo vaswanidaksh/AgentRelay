@@ -166,7 +166,7 @@ const handleAuth = async (req, res, next) => {
     }
 
     // 2. If handle or credential matches an existing user (e.g., signed in via GitHub OAuth on Web)
-    const candidateHandle = handle || (credential && credential !== 'demo-github-token' && !credential.includes(' ') ? credential : null);
+    const candidateHandle = handle || (email ? `@${email.split('@')[0]}` : null) || (credential && credential !== 'demo-github-token' && !credential.includes(' ') ? credential : null);
     if (!githubId && candidateHandle) {
       const existingByHandle = findUserByHandle(candidateHandle);
       if (existingByHandle) {
@@ -190,6 +190,21 @@ const handleAuth = async (req, res, next) => {
       githubId = `gh_${crypto.createHash('sha256').update(emailClean).digest('hex').slice(0, 10)}`;
       if (!handle) {
         handle = `@${emailClean.split('@')[0]}`;
+      }
+      const existingByEmailHandle = findUserByHandle(handle);
+      if (existingByEmailHandle) {
+        const rawToken = `lcp_pat_${crypto.randomBytes(24).toString('hex')}`;
+        const tokenId = `tok_${uuidv4().slice(0, 8)}`;
+        createApiToken({ id: tokenId, userId: existingByEmailHandle.id, rawToken });
+        return res.status(200).json({
+          token: rawToken,
+          user: {
+            id: existingByEmailHandle.id,
+            githubId: existingByEmailHandle.github_id,
+            handle: existingByEmailHandle.handle,
+            name: existingByEmailHandle.handle.replace(/^@/, '')
+          }
+        });
       }
     } else if (!githubId && (code || token)) {
       githubId = `gh_${crypto.createHash('sha256').update(credential).digest('hex').slice(0, 10)}`;

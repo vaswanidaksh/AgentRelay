@@ -18,8 +18,9 @@ export function findUserById(id) {
 
 export function findUserByHandle(handle) {
   const db = getDb();
-  const normalized = handle.startsWith('@') ? handle : `@${handle}`;
-  return db.prepare('SELECT * FROM users WHERE handle = ?').get(normalized);
+  if (!handle) return null;
+  const clean = handle.replace(/^@/, '').trim();
+  return db.prepare('SELECT * FROM users WHERE LOWER(handle) = LOWER(?) OR LOWER(handle) = LOWER(?)').get(`@${clean}`, clean);
 }
 
 export function createUser({ id, githubId, handle }) {
