@@ -21,6 +21,11 @@ export default function SessionDetailPage() {
   const [copiedPromoteCmd, setCopiedPromoteCmd] = useState(false);
   const [showCliModal, setShowCliModal] = useState(false);
 
+  // Files Touched Dropdown & Search state
+  const [filesDropdownOpen, setFilesDropdownOpen] = useState(true);
+  const [filesSearch, setFilesSearch] = useState('');
+  const [copiedFileIdx, setCopiedFileIdx] = useState(null);
+
   // Handoff state
   const [showHandoffModal, setShowHandoffModal] = useState(false);
   const [handoffTarget, setHandoffTarget] = useState('');
@@ -375,19 +380,127 @@ export default function SessionDetailPage() {
             </div>
           </div>
 
-          {/* Files Touched */}
-          <div className="rounded-2xl border border-white/[0.07] bg-[#111111] p-5 space-y-3 font-mono text-xs">
-            <h3 className="text-[11px] font-semibold text-white/40 uppercase tracking-wider">
-              Files Touched ({ (content.filesTouched || []).length })
-            </h3>
-            <div className="space-y-1.5">
-              {(content.filesTouched || []).map((file, i) => (
-                <div key={i} className="p-2 rounded-lg bg-white/[0.03] border border-white/[0.06] text-white/80 truncate">
-                  📄 {file}
-                </div>
-              ))}
-            </div>
-          </div>
+          {/* Files Touched Dropdown Menu */}
+          {(() => {
+            const allFiles = content.filesTouched || [];
+            const filteredFiles = allFiles.filter(file =>
+              !filesSearch || file.toLowerCase().includes(filesSearch.toLowerCase())
+            );
+
+            return (
+              <div className="rounded-2xl border border-white/[0.08] bg-[#111111] overflow-hidden font-mono text-xs shadow-lg transition-all">
+                {/* Dropdown Header Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setFilesDropdownOpen(prev => !prev)}
+                  className="w-full p-4 sm:p-5 flex items-center justify-between gap-3 text-left hover:bg-white/[0.02] transition-colors cursor-pointer select-none"
+                  aria-expanded={filesDropdownOpen}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="text-base">📁</span>
+                    <div className="min-w-0">
+                      <h3 className="text-[11px] font-semibold text-white/50 uppercase tracking-wider">
+                        Files Touched ({allFiles.length})
+                      </h3>
+                      <p className="text-[11px] text-white/40 truncate">
+                        {allFiles.length === 0 ? 'No files modified' : `${allFiles.length} file${allFiles.length === 1 ? '' : 's'} recorded in this session`}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/[0.06] border border-white/[0.08] text-white/60">
+                      {filesDropdownOpen ? 'Collapse' : 'Expand'}
+                    </span>
+                    <span className={`text-white/40 text-[10px] transition-transform duration-200 inline-block ${filesDropdownOpen ? 'rotate-180' : ''}`}>
+                      ▼
+                    </span>
+                  </div>
+                </button>
+
+                {/* Dropdown Menu Body */}
+                {filesDropdownOpen && (
+                  <div className="px-4 pb-4 sm:px-5 sm:pb-5 pt-0 space-y-3 border-t border-white/[0.06]">
+                    {/* Search filter if more than 6 files */}
+                    {allFiles.length > 6 && (
+                      <div className="relative pt-3">
+                        <span className="absolute left-3 top-5 pointer-events-none text-white/30 text-xs">🔍</span>
+                        <input
+                          type="text"
+                          placeholder={`Search ${allFiles.length} files...`}
+                          value={filesSearch}
+                          onChange={(e) => setFilesSearch(e.target.value)}
+                          className="w-full pl-8 pr-7 py-1.5 rounded-lg bg-black/40 border border-white/[0.08] focus:border-cyan-400/50 text-xs text-white placeholder-white/25 outline-hidden transition-all"
+                        />
+                        {filesSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setFilesSearch('')}
+                            className="absolute right-2.5 top-4.5 text-white/40 hover:text-white text-xs cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Scrollable File List */}
+                    <div className="space-y-1.5 max-h-72 sm:max-h-80 overflow-y-auto pr-1">
+                      {filteredFiles.length === 0 ? (
+                        <div className="py-4 text-center text-white/40 text-xs">
+                          No files matching &quot;{filesSearch}&quot;
+                        </div>
+                      ) : (
+                        filteredFiles.map((file, i) => (
+                          <div
+                            key={i}
+                            className="group flex items-center justify-between gap-2 p-2 rounded-lg bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.06] hover:border-white/[0.12] text-white/80 transition-colors"
+                            title={file}
+                          >
+                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                              <span className="text-white/40 shrink-0 text-xs">📄</span>
+                              <span className="truncate text-xs text-white/75 group-hover:text-white font-mono select-all">
+                                {file}
+                              </span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(file);
+                                setCopiedFileIdx(i);
+                                setTimeout(() => setCopiedFileIdx(null), 1800);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 px-1.5 py-0.5 rounded bg-white/[0.08] hover:bg-white/[0.16] text-[10px] text-white/70 hover:text-white transition-opacity shrink-0 cursor-pointer"
+                              title="Copy path to clipboard"
+                            >
+                              {copiedFileIdx === i ? '✓ Copied' : 'Copy'}
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Footer count & actions */}
+                    {allFiles.length > 6 && (
+                      <div className="flex items-center justify-between text-[11px] text-white/40 pt-1.5 border-t border-white/[0.05]">
+                        <span>
+                          Showing {filteredFiles.length} of {allFiles.length} files
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setFilesDropdownOpen(false)}
+                          className="hover:text-white cursor-pointer text-[10px]"
+                        >
+                          Collapse Menu ▲
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* Secret Scrubbing Stats */}
           <div className="rounded-2xl border border-white/[0.07] bg-[#111111] p-5 space-y-3 font-mono text-xs">

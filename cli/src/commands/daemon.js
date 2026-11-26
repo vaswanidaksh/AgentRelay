@@ -6,6 +6,9 @@ export async function daemonCommand(options) {
   console.log('🤖 Starting AgentRelay background daemon watcher & distiller loop...');
   const config = loadConfig();
   console.log(`- Scoped Folders: ${config.scopes.length}`);
+  if (config.scopes.length > 0) {
+    config.scopes.forEach(s => console.log(`  • ${s}`));
+  }
   console.log(`- Model Runtime: ${config.modelRuntimeUrl}`);
   console.log('Press Ctrl+C to exit.\n');
 
@@ -13,12 +16,12 @@ export async function daemonCommand(options) {
     try {
       const captureResult = scanAndCaptureSessionFiles();
       if (captureResult.capturedEvents > 0) {
-        console.log(`[${new Date().toLocaleTimeString()}] Captured ${captureResult.capturedEvents} new scrubbed session event(s).`);
+        console.log(`[${new Date().toLocaleTimeString()}] 📥 Captured ${captureResult.capturedEvents} new scrubbed session event(s).`);
       }
 
       const distilledCount = await processDistillJobs();
       if (distilledCount > 0) {
-        console.log(`[${new Date().toLocaleTimeString()}] Distilled ${distilledCount} context record(s).`);
+        console.log(`[${new Date().toLocaleTimeString()}] ✨ Distilled ${distilledCount} context record(s). Run "agentrelay review" or "agentrelay show" to view.`);
       }
     } catch (err) {
       console.error('Daemon loop error:', err.message);
