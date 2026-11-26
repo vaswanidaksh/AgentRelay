@@ -133,10 +133,13 @@ async function distillSessionEvents(session, events, config) {
       updatedAt: now,
     },
     content: {
-      title: llmOutput.title || `Session ${session.id} — ${session.project_tag}`,
-      summary: llmOutput.summary || `Distilled session containing ${events.length} agent interactions.`,
-      decisions: (llmOutput.decisions && llmOutput.decisions.length > 0)
-        ? llmOutput.decisions
+      title: String(llmOutput.title || `Session ${session.id} — ${session.project_tag}`).trim().slice(0, 120),
+      summary: String(llmOutput.summary || `Distilled session containing ${events.length} agent interactions.`).trim().slice(0, 1200),
+      decisions: (Array.isArray(llmOutput.decisions) && llmOutput.decisions.length > 0)
+        ? llmOutput.decisions.map(d => ({
+            text: String(d.text || `Task execution step in ${session.project_tag}`).trim(),
+            evidence: (Array.isArray(d.evidence) && d.evidence.length > 0) ? d.evidence : [events[0]?.id || 'e_1']
+          }))
         : [{ text: `Executed coding task in ${session.project_tag}`, evidence: [events[0]?.id || 'e_1'] }],
       filesTouched: llmOutput.filesTouched || extractFilesTouched(events),
       openQuestions: llmOutput.openQuestions || [],

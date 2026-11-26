@@ -164,20 +164,36 @@ export function findCodexSessionsForScope(resolvedScopePath) {
 
   const matched = [];
   const allFiles = findTranscriptFiles(codexDir);
+  const targetScope = path.resolve(resolvedScopePath);
+
   for (const file of allFiles) {
     if (!file.endsWith('.jsonl')) continue;
     try {
       const fd = fs.openSync(file, 'r');
-      const buf = Buffer.alloc(4096);
-      const bytesRead = fs.readSync(fd, buf, 0, 4096, 0);
+      // Read up to 64KB so full initial session_meta line (which can be 25KB+) is completely captured
+      const buf = Buffer.alloc(65536);
+      const bytesRead = fs.readSync(fd, buf, 0, 65536, 0);
       fs.closeSync(fd);
       const chunk = buf.toString('utf-8', 0, bytesRead);
-      const match = chunk.match(/"cwd"\s*:\s*"([^"]+)"/);
-      if (match && path.resolve(match[1]) === resolvedScopePath) {
-        matched.push(file);
+
+      // Check cwd or runtime_workspace_roots in initial metadata
+      const cwdMatch = chunk.match(/"cwd"\s*:\s*"([^"]+)"/);
+      const rootsMatch = chunk.match(/"runtime_workspace_roots"\s*:\s*\[\s*"([^"]+)"/);
+
+      const candidatePath = cwdMatch ? cwdMatch[1] : (rootsMatch ? rootsMatch[1] : null);
+      if (candidatePath) {
+        const resolvedCandidate = path.resolve(candidatePath);
+        // Match exact directory OR subdirectories within the scoped project
+        if (
+          resolvedCandidate === targetScope ||
+          resolvedCandidate.startsWith(targetScope + path.sep) ||
+          targetScope.startsWith(resolvedCandidate + path.sep)
+        ) {
+          matched.push(file);
+        }
       }
     } catch {
-      // ignore
+      // ignore unreadable files
     }
   }
   return matched;
