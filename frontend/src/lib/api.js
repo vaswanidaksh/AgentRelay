@@ -142,6 +142,17 @@ export async function getRecord(teamId, recordId) {
   return res.data.record;
 }
 
+/** PUT /api/v1/teams/:id/records/:recordId/versions/:v — Promotes/restores a record to a team workspace */
+export async function promoteRecord(teamId, record) {
+  const version = record.version || 1;
+  const payload = {
+    ...record,
+    visibility: { ...(record.visibility || {}), shareable: true }
+  };
+  const res = await apiClient.put(`/teams/${teamId}/records/${record.recordId}/versions/${version}`, payload);
+  return res.data;
+}
+
 /** DELETE /api/v1/teams/:id/records/:recordId */
 export async function withdrawRecord(teamId, recordId) {
   const res = await apiClient.delete(`/teams/${teamId}/records/${recordId}`);

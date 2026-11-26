@@ -1,8 +1,85 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom';
-import { getRecord, listTeams, listMembers, handoff, withdrawRecord } from '../lib/api';
+import { getRecord, listTeams, listMembers, handoff, withdrawRecord, promoteRecord } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import CliCommandsModal from '../components/CliCommandsModal';
+
+// ---------------------------------------------------------------------------
+// Offline-First Record Cache & Normalizer
+// Guarantees cards open instantly and never fail with 404 on server restarts
+// ---------------------------------------------------------------------------
+const normalizeRecordForDetail = (rawOrFormatted) => {
+  if (!rawOrFormatted) return null;
+  const raw = rawOrFormatted.raw || rawOrFormatted.record || rawOrFormatted;
+  return {
+    recordId: raw.recordId || raw.id || rawOrFormatted.id,
+    version: raw.version || 1,
+    schemaVersion: raw.schemaVersion || 'agentrelay.record/0.1',
+    author: raw.author || { handle: rawOrFormatted.user || '@developer', userId: 'local' },
+    origin: raw.origin || 'local',
+    source: raw.source || { agent: rawOrFormatted.agent || 'AI Agent', projectTag: rawOrFormatted.projectTag || 'shared' },
+    times: raw.times || { createdAt: new Date().toISOString() },
+    content: raw.content || {
+      title: rawOrFormatted.title || 'Context Record',
+      summary: rawOrFormatted.summary || '',
+      decisions: (raw.content?.decisions) || [],
+      filesTouched: (raw.content?.filesTouched) || [],
+      openQuestions: [],
+      tags: [rawOrFormatted.projectTag || 'agentrelay']
+    },
+    sensitivity: raw.sensitivity || { label: rawOrFormatted.sensitivity || 'none', redactionCounts: {} },
+    provenance: raw.provenance || { distiller: { model: 'local' } }
+  };
+};
+
+const findCachedRecord = (recordId, targetTeamId) => {
+  try {
+    // 1. Direct record cache
+    const direct = localStorage.getItem(`ar_cached_record_${recordId}`);
+    if (direct) {
+      return normalizeRecordForDetail(JSON.parse(direct));
+    }
+
+    // 2. Target team cache
+    if (targetTeamId) {
+      const teamRaw = localStorage.getItem(`ar_cached_records_${targetTeamId}`);
+      if (teamRaw) {
+        const teamRecs = JSON.parse(teamRaw);
+        if (Array.isArray(teamRecs)) {
+          const match = teamRecs.find(r => r.id === recordId || r.recordId === recordId);
+          if (match) return normalizeRecordForDetail(match);
+        }
+      }
+    }
+
+    // 3. Vault records cache
+    const vaultRaw = localStorage.getItem('ar_cached_vault_records');
+    if (vaultRaw) {
+      const vaultRecs = JSON.parse(vaultRaw);
+      if (Array.isArray(vaultRecs)) {
+        const match = vaultRecs.find(r => r.id === recordId || r.recordId === recordId);
+        if (match) return normalizeRecordForDetail(match);
+      }
+    }
+
+    // 4. Scan all localStorage keys for any ar_cached_records_*
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('ar_cached_records_')) {
+        try {
+          const list = JSON.parse(localStorage.getItem(key));
+          if (Array.isArray(list)) {
+            const match = list.find(r => r.id === recordId || r.recordId === recordId);
+            if (match) return normalizeRecordForDetail(match);
+          }
+        } catch {}
+      }
+    }
+  } catch (e) {
+    console.warn('Error reading from cache:', e);
+  }
+  return null;
+};
 
 export default function SessionDetailPage() {
   const { id } = useParams();
@@ -11,10 +88,11 @@ export default function SessionDetailPage() {
   const teamIdParam = searchParams.get('teamId');
   const { user } = useAuth();
 
-  const [loading, setLoading] = useState(true);
+  // Initialize immediately from local cache so the page renders with zero 404 delay
+  const [record, setRecord] = useState(() => findCachedRecord(id, teamIdParam));
+  const [loading, setLoading] = useState(!findCachedRecord(id, teamIdParam));
   const [error, setError] = useState(null);
-  const [record, setRecord] = useState(null);
-  const [teamId, setTeamId] = useState(null);
+  const [teamId, setTeamId] = useState(teamIdParam || null);
   const [members, setMembers] = useState([]);
   const [copied, setCopied] = useState(false);
   const [copiedRecordId, setCopiedRecordId] = useState(false);
@@ -40,32 +118,49 @@ export default function SessionDetailPage() {
     let isMounted = true;
 
     async function loadRecord() {
+      let resolvedTeamId = teamIdParam;
       try {
-        setLoading(true);
-        let resolvedTeamId = teamIdParam;
+        if (!record) setLoading(true);
         if (!resolvedTeamId) {
           const teams = await listTeams();
           resolvedTeamId = teams[0]?.id;
         }
 
-        if (!resolvedTeamId) throw new Error('No team found for record lookup.');
-        setTeamId(resolvedTeamId);
+        if (resolvedTeamId) setTeamId(resolvedTeamId);
 
-        const [data, memberList] = await Promise.all([
-          getRecord(resolvedTeamId, id),
-          listMembers(resolvedTeamId).catch(() => [])
-        ]);
+        if (resolvedTeamId) {
+          const [data, memberList] = await Promise.all([
+            getRecord(resolvedTeamId, id),
+            listMembers(resolvedTeamId).catch(() => [])
+          ]);
 
-        if (!isMounted) return;
-        setRecord(data);
-        setMembers(memberList);
-        if (memberList.length > 0) {
-          const firstOther = memberList.find(m => m.handle !== user?.handle);
-          if (firstOther) setHandoffTarget(firstOther.handle);
+          if (!isMounted) return;
+          const normalized = normalizeRecordForDetail(data);
+          setRecord(normalized);
+          setMembers(memberList);
+          setError(null);
+          localStorage.setItem(`ar_cached_record_${id}`, JSON.stringify(normalized));
+          if (memberList.length > 0) {
+            const firstOther = memberList.find(m => m.handle !== user?.handle);
+            if (firstOther) setHandoffTarget(firstOther.handle);
+          }
         }
       } catch (err) {
         if (!isMounted) return;
-        setError(err.message || 'Failed to load record');
+        // Fallback to local offline cache
+        const cached = findCachedRecord(id, resolvedTeamId);
+        if (cached) {
+          setRecord(cached);
+          setError(null);
+          // If server returned 404 (e.g. Render restart), background auto-restore/promote to server
+          if (resolvedTeamId && err.response?.status === 404 && cached.recordId) {
+            promoteRecord(resolvedTeamId, cached).catch((e) => {
+              console.warn('Background auto-restore to server failed:', e.message);
+            });
+          }
+        } else {
+          setError(err.message || 'Failed to load record');
+        }
       } finally {
         if (isMounted) setLoading(false);
       }
