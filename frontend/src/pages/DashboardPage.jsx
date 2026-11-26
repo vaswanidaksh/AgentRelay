@@ -1123,7 +1123,14 @@ export default function DashboardPage() {
               {filtered.map((s) => (
                 <TiltCard key={s.id}>
                   <div
-                    onClick={() => navigate(`/sessions/${s.id}?teamId=${s.teamId || activeTeam?.id || ''}`)}
+                    onClick={() => {
+                      if (s.raw) {
+                        try {
+                          localStorage.setItem(`ar_cached_record_${s.id}`, JSON.stringify(s.raw));
+                        } catch {}
+                      }
+                      navigate(`/sessions/${s.id}?teamId=${s.teamId || activeTeam?.id || ''}`);
+                    }}
                     className="p-5 flex flex-col gap-3 group cursor-pointer"
                   >
                     {/* Top Row: User Avatar & Session Title */}
